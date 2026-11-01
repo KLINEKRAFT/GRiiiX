@@ -82,7 +82,7 @@ function view(){
  const latestStatus=A.log[0]?A.log[0].split(" — ").slice(1).join(" — "):"Connect to your camera to begin.";
  return '<div class="shoot-screen">'+
  '<section class="shoot-intro"><div class="shoot-kicker">KLINEKRAFT GR / CAPTURE</div><div class="shoot-intro-row"><h1>Make the frame.</h1><span class="shoot-connection '+(active?'is-online':'')+'"><i></i>'+connection+'</span></div></section>'+
- '<div class="shoot-camera-meta"><span>RICOH GR IIIx</span><span>'+safe(A.settings?.exposureMode||"—")+' &nbsp;·&nbsp; ISO '+safe(A.settings?.iso||"—")+'</span></div>'+
+ '<div class="shoot-camera-meta"><span>RICOH GR IIIx</span><span>'+safe(A.settings?.exposureMode||"—")+' &nbsp;·&nbsp; '+safe(window.KKExposure?.display("tv",A.settings?.shutter)||"—")+' &nbsp;·&nbsp; '+safe(window.KKExposure?.display("av",A.settings?.aperture)||"—")+' &nbsp;·&nbsp; ISO '+safe(A.settings?.iso||"—")+'</span></div>'+
  '<div class="shoot-viewfinder">'+(shot?'<img class="shoot-preview" src="'+safe(shot.url)+'" alt="Last analyzed camera photograph">':'<div class="shoot-no-preview"><div class="shoot-focus-corners"><span></span><span></span><span></span><span></span></div><div class="shoot-frame-title">READY FOR THE LIGHT</div><div class="shoot-frame-subtitle">Your latest frame appears here.</div></div>')+
  '<div class="shoot-viewfinder-meta"><span>GR IIIx &nbsp;/&nbsp; '+(shot?"FRAME "+A.shots.length:"STANDBY")+'</span><span>'+(shot?safe(shot.name):'40 MM')+'</span></div></div>'+
  '<div class="shoot-control-band">'+(active?
