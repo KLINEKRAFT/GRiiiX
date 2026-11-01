@@ -47,3 +47,9 @@ The code is organized in `index.html` (existing app and data), `adaptive.js` (Sh
 2. Extract EXIF metadata from the camera's photo info endpoint to improve shooting recommendations, especially in bright daylight.
 3. After independent mode-specific validation, add shutter/aperture controls with reversible writes.
 4. Improve optional live view and focus controls using the same safe camera transport.
+
+## Cinematic Photography Director
+
+A dedicated **Photography Director → Cinematic** mode has been added to Shoot. It preserves dark, intentional shadows and prioritizes bright detail with conservative ISO changes. Controls on the GR IIIx are allowed **only** in M mode with fixed ISO, after explicit authorization, and with camera-side value guards and successful read-back. Maximum ISO 6400 and roughly 0.7 stop per desired adjustment (camera step guard approximately 0.85 stop). A separate Director pass is capped at two frames.
+
+See [DIRECTOR.md](./DIRECTOR.md) for setup, safety boundaries, and tests. The feature is implemented and simulated but not yet physically validated with this firmware.
