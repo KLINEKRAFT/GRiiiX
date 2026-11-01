@@ -46,7 +46,7 @@ function view(){
  let last=A.shots[A.shots.length-1];
  const active=A.connected&&!!bridge();
  return heading("Adaptive Capture.","Review each frame. Improve your exposure. Keep the atmosphere.")+
- '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">CAMERA LINK</div><h2>GR IIIx</h2></div><span class="ac-pill '+(active?"good":"")+'">'+(active?"Connected":"Not connected")+'</span></div><p class="ac-small">Camera commands require the optional Scriptable iPhone bridge. Chrome or Safari on Vercel can analyze images, but cannot directly fetch the camera HTTP API.</p><div class="ac-actions"><button class="ac-button light" data-ac="connect" '+(!bridge()||A.busy?"disabled":"")+'>Connect camera</button><button class="ac-button" data-ac="capture" '+(!active||A.busy?"disabled":"")+'>Test capture</button></div></div>'+
+ '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">CAMERA LINK</div><h2>GR IIIx</h2></div><span class="ac-pill '+(active?"good":"")+'">'+(active?"Connected":"Not connected")+'</span></div><p class="ac-small">Run this interface in Scriptable to use the camera. Use the checks below in order to isolate any failure.</p><div class="ac-actions"><button class="ac-button light" data-ac="connect" '+(!bridge()||A.busy?"disabled":"")+'>1 · Connect</button><button class="ac-button light" data-ac="check" '+(!active||A.busy?"disabled":"")+'>2 · Check card</button><button class="ac-button light" data-ac="latest" '+(!active||A.busy?"disabled":"")+'>3 · Review latest photo</button><button class="ac-button" data-ac="capture" '+(!active||A.busy?"disabled":"")+'>4 · Shoot & analyze</button></div><div class="ac-blue" role="status" aria-live="polite"><b>Latest status</b><p>'+safe(A.log[0]||"Run 1 · Connect first.")+'</p></div></div>'+
  '<div class="ac-card"><div class="ac-label">CREATIVE TARGET</div><div class="ac-fields"><label>Scene<select id="acScene">'+Object.entries(sceneNames).map(([k,v])=>'<option '+(A.scene===k?"selected":"")+' value="'+k+'">'+v+'</option>').join("")+'</select></label><label>Look<select id="acIntent">'+[["moody","Moody / cinematic"],["balanced","Balanced"],["bright","Bright / clear"]].map(([k,v])=>'<option '+(A.intent===k?"selected":"")+' value="'+k+'">'+v+'</option>').join("")+'</select></label><label>Current ISO<input id="acIso" type="number" min="100" max="102400" value="'+A.iso+'"></label><label>ISO limit<input id="acMax" type="number" min="100" max="102400" value="'+A.max+'"></label></div><p class="ac-small">ISO is entered manually until the camera properties are parsed and confirmed.</p></div>'+
  '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">PHOTO REVIEW</div><h2>Analyze a shot</h2></div><span class="ac-pill">'+A.shots.length+' photos</span></div><label class="ac-button ac-picker">Import photographs<input id="acPhotos" type="file" accept="image/*" multiple hidden></label> <button class="ac-button light" data-ac="clear" '+(!A.shots.length?"disabled":"")+'>Clear</button><p class="ac-small">Compatible JPEG / HEIC images are processed only on-device. RAW requires a rendered preview.</p></div>'+
  (last?result(last):'<div class="ac-card ac-empty">Import a photograph to see exposure, highlight, and shadow analysis.</div>')+
@@ -56,9 +56,32 @@ function view(){
 }
 async function native(op,payload){if(!bridge())throw Error("Scriptable camera bridge is not active.");const response=await bridge().request(op,payload||{});if(!response||response.error)throw Error(response?.error||"No camera response");return response}
 async function connect(){try{A.busy=true;message("Checking camera ping…");const ping=await native("ping");const props=await native("props");A.camera=props;A.connected=true;message("Camera connection verified. Read-only control active.");return {ping,props}}catch(e){A.connected=false;message("Camera not connected: "+e.message)}finally{A.busy=false;refresh()}}
+async function checkCard(){
+ try{A.busy=true;message("Checking camera SD card…");const r=await native("listPhotos");
+  message("Card: "+r.count+" photos ("+r.jpegs+" JPEG, "+r.dngs+" DNG), "+r.folders+" folders. "+(r.latest?"Latest: "+r.latest:"No recent photo found."));
+ }catch(e){message("Card check failed: "+e.message)}
+ finally{A.busy=false;refresh()}
+}
+async function latestPhoto(){
+ try{
+  A.busy=true;message("Downloading preview of latest photo…");
+  const r=await native("latestPreview");await addCameraShot(r);
+  message("Latest camera photo reviewed and analyzed.");
+ }catch(e){message("Preview check failed: "+e.message)}
+ finally{A.busy=false;refresh()}
+}
+async function addCameraShot(r){
+ if(!r.base64||!r.mime)throw Error("Camera returned no JPEG preview data");
+ const bytes=Uint8Array.from(atob(r.base64),c=>c.charCodeAt(0));
+ if(bytes[0]!==255||bytes[1]!==216)throw Error("Preview data is not a JPEG");
+ const photo=new File([bytes],r.name||"Ricoh-preview.jpg",{type:"image/jpeg"});
+ const shot=await examine(photo);A.shots.push(shot);
+ while(A.shots.length>8)URL.revokeObjectURL(A.shots.shift().url);
+ refresh();
+}
 async function capture(){
- try{A.busy=true;message("Capturing a test photo…");const r=await native("capturePreview");if(!r.base64||!r.mime)throw Error("No usable preview returned. Check camera photo-list response.");
- let bytes=Uint8Array.from(atob(r.base64),c=>c.charCodeAt(0)),photo=new File([bytes],r.name||"GR-test.jpg",{type:r.mime});let shot=await examine(photo);A.shots.push(shot);while(A.shots.length>8)URL.revokeObjectURL(A.shots.shift().url);message("Test photo analyzed; original preserved on camera.")
+ try{A.busy=true;message("Capturing a test photo…");const r=await native("capturePreview");await addCameraShot(r);
+ message("Test photo analyzed; original preserved on camera.")
  }catch(e){message("Test capture stopped: "+e.message)}finally{A.busy=false;refresh()}
 }
 async function auto(){
@@ -69,7 +92,7 @@ async function auto(){
  let result=await native("setISO",{iso:p.iso});if(result.verified!==true)throw Error("ISO read-back failed, stopping");A.iso=p.iso}
  }catch(e){message("Auto Correct stopped: "+e.message)}finally{A.busy=false;A.stop=false;refresh()}
 }
-document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="capture")await capture();if(op==="auto")await auto();if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
+document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="auto")await auto();if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
 document.addEventListener("change",e=>{let x=e.target;if(x.id==="acPhotos"){addFiles([...x.files]);x.value=""}
 if(x.id==="acScene"){A.scene=x.value;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
 if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.id==="acMax"){A.max=clamp(Number(x.value)||12800,100,102400);refresh()}});
