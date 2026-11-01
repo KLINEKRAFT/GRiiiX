@@ -97,7 +97,7 @@ async function applySuggestion(){
    message("Camera setting change cancelled.");return;
   }
   message("Sending ISO adjustment to your GR IIIx…");
-  const result=await native("setISO",{iso:proposed,expected:current.iso});
+  const result=await native("setISO",{iso:proposed,expected:current.iso,maxISO:A.max});
   const checked=await readSettings();
   if(result.verified!==true){
    if(result.same){message("Camera was already set to "+checked.iso+". No change made.");return}
@@ -173,7 +173,7 @@ async function auto(){
    message("Frame "+(i+1)+": "+proposed.text);
    if(proposed.ready || A.stop || i+1>=A.maxShots)break;
    const oldISO=before.iso;
-   const write=await native("setISO",{iso:proposed.iso,expected:oldISO});
+   const write=await native("setISO",{iso:proposed.iso,expected:oldISO,maxISO:A.max});
    if(write.same){message("Camera ISO cannot improve further at the available setting.");break}
    if(write.verified!==true)throw Error("Camera ISO adjustment wasn't verified. Stopping.");
    const checked=await readSettings();
