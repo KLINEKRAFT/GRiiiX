@@ -305,7 +305,7 @@ function buildExposureStep(current,field,direction,scene){
     throw Error("Camera did not report supported "+field+" values; write disabled.");
   const minShutter=scene==="running"?1/250:scene==="people"?1/125:scene==="portrait"?1/60:1/30;
   const allowed=options.map(String).filter(value=>field==="tv"
-    ?secondsFromTv(value)!==null&&secondsFromTv(value)>=1/1000&&secondsFromTv(value)<=minShutter
+    ?secondsFromTv(value)!==null&&secondsFromTv(value)>=(fNumber(current.aperture)>=5.6?1/4000:1/2500)&&secondsFromTv(value)<=minShutter
     :fNumber(value)!==null).filter((value,i,arr)=>arr.indexOf(value)===i);
   const source=field==="tv"?current.shutter:current.aperture;
   if(!allowed.includes(source))
