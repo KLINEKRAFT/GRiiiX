@@ -103,8 +103,22 @@ function previewPath(path) {
 }
 async function loadPreview(path) {
   const name=path.split("/").pop();
-  return {name:name.replace(/\.dng$/i,".jpg"),mime:"image/jpeg",
-    base64:await imageRequest(previewPath(path))};
+  const url=previewPath(path);
+  try{
+    return {name:name.replace(/\.dng$/i,".jpg"),mime:"image/jpeg",
+      base64:await imageRequest(url)};
+  }catch(primary){
+    // A small thumbnail is more likely to finish over the GR's slower 2.4GHz radio.
+    // This fallback remains a genuine image from the camera, never a placeholder.
+    try{
+      const thumb=url.replace("?size=view","?size=thumb");
+      return {name:name.replace(/\.dng$/i,".jpg"),mime:"image/jpeg",
+        base64:await imageRequest(thumb),quality:"thumb"};
+    }catch(fallback){
+      throw Error("Photo saved, but preview download failed (view: "+String(primary.message||primary)+
+        "; thumb: "+String(fallback.message||fallback)+"). Use Recover photo after reconnecting.");
+    }
+  }
 }
 async function latestPreview() {
   const list=pathsFromPhotos(await cameraRequest("/v1/photos"));
@@ -113,21 +127,57 @@ async function latestPreview() {
   return await loadPreview(path);
 }
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function capturePreview() {
-  const before=pathsFromPhotos(await cameraRequest("/v1/photos"));
-  const beforeSet=new Set(before);
-  await cameraRequest("/v1/camera/shoot","POST");
-  let newest=null;
-  for(let attempt=0;attempt<14;attempt++){
-    await wait(850);
-    const after=pathsFromPhotos(await cameraRequest("/v1/photos"));
-    const added=after.filter(x=>!beforeSet.has(x));
-    if(added.length){newest=added[added.length-1];break}
-  }
-  if(!newest)throw Error("Shutter command sent, but no new photo appeared in the list. Before="+before.length+". Try 'Check card' or 'Review latest photo' to isolate the problem.");
-  return await loadPreview(newest);
+const PENDING_FILE=fm.joinPath(folder,"pending-capture.json");
+let pendingCapture=null;
+try{if(fm.fileExists(PENDING_FILE))pendingCapture=JSON.parse(fm.readString(PENDING_FILE))}catch(e){pendingCapture=null}
+function persistPending(snapshot){
+  pendingCapture=snapshot;
+  try{
+    if(snapshot)fm.writeString(PENDING_FILE,JSON.stringify(snapshot));
+    else if(fm.fileExists(PENDING_FILE))fm.remove(PENDING_FILE);
+  }catch(e){messages.push("Capture recovery state could not be saved: "+String(e.message||e))}
 }
-
+async function findNewCapture(snapshot){
+  const paths=pathsFromPhotos(await cameraRequest("/v1/photos"));
+  const previous=new Set(snapshot.before||[]);
+  const added=paths.filter(p=>!previous.has(p));
+  return added.length?added[added.length-1]:null;
+}
+async function retrievePending(maxWaitMs){
+  if(!pendingCapture)return {pending:false,message:"There is no outstanding camera shot to recover."};
+  const end=Date.now()+maxWaitMs;
+  let lastError="";
+  while(Date.now()<end){
+    try{
+      if(!pendingCapture.path){
+        const path=await findNewCapture(pendingCapture);
+        if(path){persistPending({...pendingCapture,path})}
+      }
+      if(pendingCapture.path){
+        const p=await loadPreview(pendingCapture.path);
+        persistPending(null);return p;
+      }
+    }catch(e){lastError=String(e.message||e)}
+    await wait(850);
+  }
+  return {pending:true,message:"Shutter may have fired. No new preview yet. "+
+    (lastError?"Last camera error: "+lastError:"Check if the image is on the SD card.")+
+    " Tap Recover photo to try again WITHOUT taking another shot."};
+}
+async function capturePreview(){
+  // Never repeat POST on timeout, and never send a second shutter command while
+  // the previous result is unresolved. Recovery only performs GET requests.
+  if(pendingCapture)return {pending:true,message:"Previous shutter result unresolved. Use Recover photo before taking another shot."};
+  const before=pathsFromPhotos(await cameraRequest("/v1/photos"));
+  persistPending({before,started:Date.now(),path:null});
+  try{await cameraRequest("/v1/camera/shoot","POST")}
+  catch(e){
+    // A timed-out POST can still have triggered the camera: keep recovery state.
+    return {pending:true,message:"Shutter response uncertain: "+String(e.message||e)+
+      ". Use Recover photo. No automatic second shutter attempt."};
+  }
+  return await retrievePending(21000);
+}
 // Camera ISO bridge: one camera setting at a time, read and verify on every write.
 // Deliberately never accept arbitrary paths or unvalidated key-value pairs from WebView.
 function numericISO(v) {
@@ -203,6 +253,8 @@ async function handle(message) {
     case "listPhotos": return summarizePhotoList(await cameraRequest("/v1/photos"));
     case "latestPreview": return await latestPreview();
     case "capturePreview": return await capturePreview();
+    case "recoverCapture": return await retrievePending(15000);
+    case "clearPending": persistPending(null); return {cleared:true};
     case "getSettings": return await readISOState();
     case "setISO": return await setVerifiedISO(message.payload);
     default: throw Error("Unsupported camera command: "+message.op);
@@ -242,7 +294,7 @@ try {
   // Queue-based bridge: Scriptable processes camera requests outside WebKit.
   await view.evaluateJavaScript(
     "(function(){window.__kkJobs=[];window.__kkPending={};window.__kkSerial=0;" +
-    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;var wait=(op==='capturePreview'||op==='setISO')?85000:op==='latestPreview'?45000:35000;var timer=setTimeout(function(){if(window.__kkPending[id]){delete window.__kkPending[id];resolve({error:'Scriptable bridge timed out during '+op+'. Open the script again or check camera Wi-Fi.'})}},wait);window.__kkPending[id]=function(result){clearTimeout(timer);resolve(result)};window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
+    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;var wait=(op==='capturePreview'||op==='setISO')?110000:op==='recoverCapture'?85000:op==='latestPreview'?65000:45000;var timer=setTimeout(function(){if(window.__kkPending[id]){delete window.__kkPending[id];resolve({error:'Scriptable bridge timed out during '+op+'. Open the script again or check camera Wi-Fi.'})}},wait);window.__kkPending[id]=function(result){clearTimeout(timer);resolve(result)};window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
     "window.__kkReceive=function(x){var fn=window.__kkPending[x.id];if(fn){delete window.__kkPending[x.id];fn(x.result)}};return true})()",
     false
   );
