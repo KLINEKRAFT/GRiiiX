@@ -9,8 +9,16 @@ const FILES = ["index.html", "adaptive.js", "adaptive.css", "icon.svg", "manifes
 const CAMERA = "http://192.168.0.1";
 const fm = FileManager.local();
 const folder = fm.joinPath(fm.documentsDirectory(), "KlinekraftGR");
-if (!fm.fileExists(folder)) fm.createDirectory(folder, true);
 let messages = [];
+let stage = "startup";
+async function showMessage(title, description) {
+  const alert = new Alert();
+  alert.title = title;
+  alert.message = description;
+  alert.addAction("OK");
+  await alert.presentAlert();
+}
+
 
 async function cameraRequest(path, method) {
   if (!path.startsWith("/v1/")) throw Error("Camera path must start with /v1/");
@@ -96,9 +104,20 @@ async function syncUI(){
   return synced;
 }
 try {
+  stage = "preflight";
+  if (!fm.fileExists(folder)) fm.createDirectory(folder, true);
+  const hasCache = fm.fileExists(fm.joinPath(folder,"index.html"));
+  await showMessage("Klinekraft GR", hasCache
+    ? "Bridge started. Tap OK to open the camera companion. If you're connected to the camera's Wi-Fi, the saved offline copy will be used."
+    : "Bridge started. Connect to regular internet for first-time setup. Tap OK to download the app files from GitHub.");
+  stage = "downloading";
   const count=await syncUI();
+  stage = "loading WebView";
   const view=new WebView();
   await view.loadFile(fm.joinPath(folder,"index.html"));
+  const ready=await view.evaluateJavaScript("({title:document.title,bodyLength:document.body?document.body.innerText.length:0})",false);
+  if (!ready || !ready.bodyLength) throw Error("The saved HTML loaded as an empty page. Try updating with an internet connection.");
+  stage = "initializing camera bridge";
   // Queue-based bridge: Scriptable processes camera requests outside WebKit.
   await view.evaluateJavaScript(
     "(function(){window.__kkJobs=[];window.__kkPending={};window.__kkSerial=0;" +
@@ -106,27 +125,34 @@ try {
     "window.__kkReceive=function(x){var fn=window.__kkPending[x.id];if(fn){delete window.__kkPending[x.id];fn(x.result)}};return true})()",
     false
   );
+  stage = "displaying app";
   let showing=true;
-  const closed=view.present(false);
-  closed.then(()=>{showing=false}).catch(()=>{showing=false});
-  while(showing){
-    let job;
-    try {
-      job=await view.evaluateJavaScript(
-        "(function(){var pull=function(){if(window.__kkJobs&&window.__kkJobs.length){completion(window.__kkJobs.shift())}else{setTimeout(function(){completion(null)},350)}};pull()})()",
-        true
-      );
-    }catch(e){break}
-    if(!job || !job.op)continue;
-    let response;
-    try{response=await handle(job)}catch(e){response={error:String(e.message||e)}}
-    try{await view.evaluateJavaScript("window.__kkReceive("+JSON.stringify({id:job.id,result:response})+")",false)}
-    catch(e){break}
-  }
+  let pumpError=null;
+  // Let the WebView remain onscreen even if the background message pump fails.
+  // Never call Script.complete() while its presentation promise is still open.
+  const pump=(async()=>{
+    while(showing){
+      let job;
+      try {
+        job=await view.evaluateJavaScript(
+          "(function(){var pull=function(){if(window.__kkJobs&&window.__kkJobs.length){completion(window.__kkJobs.shift())}else{setTimeout(function(){completion(null)},350)}};pull()})()",
+          true
+        );
+      }catch(e){pumpError=e;break}
+      if(!job || !job.op)continue;
+      let response;
+      try{response=await handle(job)}catch(e){response={error:String(e.message||e)}}
+      try{await view.evaluateJavaScript("window.__kkReceive("+JSON.stringify({id:job.id,result:response})+")",false)}
+      catch(e){pumpError=e;break}
+    }
+  })();
+  await view.present(false); // Wait until user closes the app. Do not silently exit.
+  showing=false;
+  if (pumpError) logError("Klinekraft GR background bridge issue: "+String(pumpError));
 }catch(error){
   const a=new Alert();
   a.title="Klinekraft GR Bridge";
-  a.message=String(error.message||error)+"\n\n"+messages.join("\n");
+  a.message="Step: "+stage+"\n"+String(error.message||error)+"\n\n"+messages.join("\n");
   a.addAction("OK");await a.present();
 }
 Script.complete();
