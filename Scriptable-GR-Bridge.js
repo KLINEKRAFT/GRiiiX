@@ -261,20 +261,27 @@ async function handle(message) {
   }
 }
 async function syncUI(){
-  let synced=0,online=true;
-  for(const file of FILES){
-    if(!online)break;
-    try{
+  // All-or-nothing refresh. Never mix new index.html with older JavaScript
+  // when GitHub becomes unavailable while connected to the camera's Wi-Fi.
+  const downloaded=[];
+  try{
+    for(const file of FILES){
       const r=new Request(SOURCE+file);
       r.timeoutInterval=4;
       const data=await r.load();
-      if(r.response && r.response.statusCode!==200)throw Error("HTTP "+r.response.statusCode);
-      fm.write(fm.joinPath(folder,file),data);
-      synced++;
-    }catch(e){messages.push("Using cached interface; update unavailable: "+e.message);online=false}
+      if(r.response && r.response.statusCode!==200)
+        throw Error(file+" HTTP "+r.response.statusCode);
+      downloaded.push({file,data});
+    }
+  }catch(e){
+    messages.push("Using last complete offline app; update unavailable: "+String(e.message||e));
+    if(!fm.fileExists(fm.joinPath(folder,"index.html")))
+      throw Error("First-time download incomplete. Run once while connected to regular internet. "+String(e.message||e));
+    return 0;
   }
-  if(!fm.fileExists(fm.joinPath(folder,"index.html")))throw Error("No cached UI. Run the script once while your iPhone has internet access.");
-  return synced;
+  // For normal operation this writes a very small local bundle.
+  for(const item of downloaded)fm.write(fm.joinPath(folder,item.file),item.data);
+  return downloaded.length;
 }
 try {
   stage = "preflight";
