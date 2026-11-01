@@ -29,7 +29,12 @@ async function cameraRequest(path, method) {
   const output = await r.loadString();
   const status = r.response ? r.response.statusCode : 0;
   if (status < 200 || status >= 300) throw Error("Camera HTTP " + status + ": " + output.slice(0,180));
-  try { return JSON.parse(output) } catch (e) { return {text: output} }
+  let result;
+  try { result=JSON.parse(output); } catch (e) { return {text: output} }
+  // Ricoh often conveys an error in JSON while still returning HTTP 200.
+  if (result && typeof result.errCode==="number" && result.errCode!==200 && result.errCode!==0)
+    throw Error("Camera "+path+" returned "+result.errCode+": "+String(result.errMsg||"Unknown error"));
+  return result;
 }
 async function imageRequest(path) {
   const r = new Request(CAMERA + path);
@@ -38,50 +43,93 @@ async function imageRequest(path) {
   const bytes = await r.load();
   const status = r.response ? r.response.statusCode : 0;
   if (status < 200 || status >= 300) throw Error("Camera preview HTTP " + status);
-  if (!bytes || !bytes.toBase64String()) throw Error("Empty camera preview");
+  if (!bytes) throw Error("Empty camera preview");
+  const header=bytes.getBytes().slice(0,3);
+  if(header[0]!==255 || header[1]!==216 || header[2]!==255)
+    throw Error("Camera returned data, but not JPEG. HTTP "+status+"; first bytes: "+header.join(","));
   return bytes.toBase64String();
 }
+// The GR III/IIIx typically reports {dirs:[{name:"100RICOH",files:["R0000001.JPG", ...]}]}.
+// Earlier versions of this script silently ignored those filename strings.
 function pathsFromPhotos(json) {
-  const found = new Set();
-  function visit(value, parent, depth) {
-    if (depth > 14 || value == null) return;
-    if (Array.isArray(value)) { for (const item of value) visit(item,parent,depth+1); return }
-    if (typeof value !== "object") return;
-    const folder = value.folder || value.directory || value.dir || (typeof value.name==="string" && /^\d{3}[A-Z0-9_]{3,}$/i.test(value.name) ? value.name : parent);
-    const filename = value.filename || value.file || (typeof value.name==="string" && /\.jpe?g$/i.test(value.name) ? value.name : null);
-    const path = value.path || value.url || value.href || "";
-    if (typeof path === "string") {
-      const m=path.match(/(?:^|\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+\.jpe?g)(?:\?|$)/i);
-      if(m)found.add(m[1]+"/"+m[2]);
+  const found=new Set();
+  const validPart=x=>typeof x==="string" && /^[A-Za-z0-9_.-]+$/.test(x);
+  const validImage=x=>validPart(x) && /\.(jpe?g|dng)$/i.test(x);
+  function add(dir,file) {
+    if(validPart(dir)&&validImage(file))found.add(dir+"/"+file);
+  }
+  function visit(value,parent,depth) {
+    if(depth>12||value==null)return;
+    if(typeof value==="string"){
+      if(parent&&validImage(value))add(parent,value);
+      return;
     }
-    if (filename && folder && /^[A-Za-z0-9_.-]+$/.test(String(folder)) && /^[A-Za-z0-9_.-]+\.jpe?g$/i.test(String(filename)))found.add(folder+"/"+filename);
-    for (const key of Object.keys(value)) if (value[key] && typeof value[key] === "object")visit(value[key],folder,depth+1);
+    if(Array.isArray(value)){for(const x of value)visit(x,parent,depth+1);return}
+    if(typeof value!=="object")return;
+    const dir=value.folder||value.directory||value.dir||
+      (typeof value.name==="string" && /^\d{3}[A-Za-z0-9_]{4,}$/.test(value.name)?value.name:parent);
+    const filename=value.filename||value.file||
+      (typeof value.name==="string"&&validImage(value.name)?value.name:null);
+    if(filename&&dir)add(dir,filename);
+    const url=value.path||value.url||value.href;
+    if(typeof url==="string"){
+      const match=url.match(/(?:^|\/)([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+\.(?:jpe?g|dng))(?:\?|$)/i);
+      if(match)add(match[1],match[2]);
+    }
+    if(Array.isArray(value.files))visit(value.files,dir,depth+1);
+    for(const key of Object.keys(value)){
+      if(key==="files"||key==="path"||key==="url"||key==="href")continue;
+      if(value[key]&&typeof value[key]==="object")visit(value[key],dir,depth+1);
+    }
   }
   visit(json,null,0);
-  return [...found].sort();
+  return [...found].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+}
+function summarizePhotoList(data) {
+  const paths=pathsFromPhotos(data);
+  return {count:paths.length,jpegs:paths.filter(p=>/\.jpe?g$/i.test(p)).length,
+    dngs:paths.filter(p=>/\.dng$/i.test(p)).length,
+    folders: Array.isArray(data?.dirs)?data.dirs.length:0,
+    keys: Object.keys(data||{}).slice(0,8),
+    latest:paths.length?paths[paths.length-1]:null};
+}
+function previewPath(path) {
+  const pieces=path.split("/");
+  if(pieces.length!==2)throw Error("Unexpected camera file path");
+  return "/v1/photos/"+encodeURIComponent(pieces[0])+"/"+encodeURIComponent(pieces[1])+"?size=view";
+}
+async function loadPreview(path) {
+  const name=path.split("/").pop();
+  return {name:name.replace(/\.dng$/i,".jpg"),mime:"image/jpeg",
+    base64:await imageRequest(previewPath(path))};
+}
+async function latestPreview() {
+  const list=pathsFromPhotos(await cameraRequest("/v1/photos"));
+  if(!list.length)throw Error("No photos found on camera SD card (check camera mode or Wi-Fi).");
+  const path=list[list.length-1];
+  return await loadPreview(path);
 }
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function capturePreview() {
-  // Strictly compare filenames before/after shutter release. Never silently show an old photo.
-  const old=pathsFromPhotos(await cameraRequest("/v1/photos"));
+  const before=pathsFromPhotos(await cameraRequest("/v1/photos"));
+  const beforeSet=new Set(before);
   await cameraRequest("/v1/camera/shoot","POST");
-  let newest;
-  for(let attempt=0;attempt<9;attempt++) {
-    await wait(900);
-    const list=pathsFromPhotos(await cameraRequest("/v1/photos"));
-    newest=list.find(x=>!old.includes(x));
-    if(newest)break;
+  let newest=null;
+  for(let attempt=0;attempt<14;attempt++){
+    await wait(850);
+    const after=pathsFromPhotos(await cameraRequest("/v1/photos"));
+    const added=after.filter(x=>!beforeSet.has(x));
+    if(added.length){newest=added[added.length-1];break}
   }
-  if(!newest)throw Error("Shutter requested, but a new JPEG was not identified. Check RAW+JPEG mode and /v1/photos response format.");
-  const components=newest.split("/");
-  const url="/v1/photos/"+encodeURIComponent(components[0])+"/"+encodeURIComponent(components[1])+"?size=view";
-  return {name:components[1],mime:"image/jpeg",base64:await imageRequest(url)};
+  if(!newest)throw Error("Shutter command sent, but no new photo appeared in the list. Before="+before.length+". Try 'Check card' or 'Review latest photo' to isolate the problem.");
+  return await loadPreview(newest);
 }
 async function handle(message) {
   switch(message.op) {
     case "ping": return await cameraRequest("/v1/ping");
     case "props": return await cameraRequest("/v1/props");
-    case "listPhotos": return {paths:pathsFromPhotos(await cameraRequest("/v1/photos"))};
+    case "listPhotos": return summarizePhotoList(await cameraRequest("/v1/photos"));
+    case "latestPreview": return await latestPreview();
     case "capturePreview": return await capturePreview();
     case "setISO": throw Error("ISO writes are not yet enabled. Verify the exact protocol and firmware first.");
     default: throw Error("Unsupported camera command: "+message.op);
