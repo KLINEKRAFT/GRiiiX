@@ -37,7 +37,7 @@ function propose(settings,field,direction,scene){
  const current=String(field==="tv"?settings.shutter:settings.aperture);
  const minShutter=scene==="running"?1/250:scene==="people"?1/125:scene==="portrait"?1/60:1/30;
  const values=options.map(String)
-    .filter(x=>field==="tv"?tvSeconds(x)!==null&&tvSeconds(x)>=1/1000&&tvSeconds(x)<=minShutter
+    .filter(x=>field==="tv"?tvSeconds(x)!==null&&tvSeconds(x)>=(aperture(settings.aperture)>=5.6?1/4000:1/2500)&&tvSeconds(x)<=minShutter
       :aperture(x)!==null)
     .filter((x,i,arr)=>arr.indexOf(x)===i);
  // Moving subjects may already be set slower than the recommended minimum.
