@@ -138,7 +138,7 @@ async function applySuggestion(){
   }
   if(checked.iso!==result.after)throw Error("Second read-back did not match the applied ISO");
   A.undoISO=result.before;A.verified=true;
-  message("Camera confirmed ISO "+result.before+" → "+result.after+". You can undo this, or try Auto Correct in M mode.");
+  message("Camera confirmed ISO "+result.before+" → "+result.after+". "+(A.directorOn?"Director pass is now available in Advanced controls.":"You can undo this, or try Auto Correct in M mode."));
  }catch(e){A.verified=false;message("ISO adjustment failed: "+e.message)}
  finally{A.busy=false;refresh()}
 }
