@@ -68,6 +68,11 @@ function coordinate(metrics,settings,scene,options){
    return no("exposure_unavailable","Shutter or aperture values were not reported reliably. Review the camera controls.");
  const sign=assessment.ev>0?"brighter":"darker";
  const sceneName=["people","running","portrait","still"].includes(scene)?scene:"people";
+ const shutterSeconds=exposure.tvSeconds(settings.shutter);
+ const minimum=sceneName==="running"?1/250:sceneName==="people"?1/125:sceneName==="portrait"?1/60:1/30;
+ if(!shutterSeconds||shutterSeconds>minimum)
+   return no("unsafe_shutter","Set the camera to 1/"+(sceneName==="running"?"250":sceneName==="people"?"125":sceneName==="portrait"?"60":"30")+" sec or faster before Director controls exposure for this subject.");
+
  const available=[];
  const iso=Number(settings.iso);
  const steps=Array.isArray(settings.isoOptions)?settings.isoOptions.map(String):[];
