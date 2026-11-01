@@ -53,3 +53,7 @@ node --test tests/exposure.test.js tests/director.test.js
 ```
 
 **Shutter and aperture writes are not yet confirmed on this specific physical GR IIIx or its firmware.** Test with a harmless scene and visually confirm both the camera display and the on-screen read-back. The rest of the app's existing photo retrieval and ISO functions are preserved.
+
+## Photography Director and coordinated recommendations
+
+Director can now select one supported next change across ISO, shutter, or aperture, using a scene-aware ranking. Every change is approved individually and rechecked against live camera state. The app requires a new camera capture before applying another Director change. Automatic shutter/aperture operations are still locked pending on-camera testing. See [DIRECTOR.md](./DIRECTOR.md) for usage and the [coordination tests](./tests/coordination.test.js).
