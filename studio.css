@@ -166,3 +166,23 @@ html[data-theme="dark"] .ac-photo{background:#090b0a}
 .collection-empty p{font-size:13px;color:var(--muted);line-height:1.7;max-width:340px;margin:7px auto 19px}
 .collection-empty button{background:var(--ink);color:var(--ink-inverse);border:0;padding:12px 18px;border-radius:8px;font-size:12px;font-weight:680}
 @media(min-width:700px){.collection-gallery{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.look-item{padding-top:28px;padding-bottom:25px}}
+
+
+/* Photography Director / Cinematic — subtle editorial treatment */
+.director-panel{border:1px solid var(--line);border-radius:11px;padding:20px;margin:24px 0 24px;background:var(--paper);position:relative;overflow:hidden}
+.director-panel.director-active{border-color:var(--accent);background:var(--paper)}
+.director-panel.director-active:before{content:"";position:absolute;top:0;left:0;bottom:0;width:3px;background:var(--accent)}
+.director-top{display:flex;justify-content:space-between;gap:13px;align-items:center}
+.director-top h2{font-size:24px;margin:7px 0 0;font-weight:620;letter-spacing:-.06em}
+.director-panel p{font-size:12px;line-height:1.6;color:var(--muted);margin:12px 0 0;max-width:520px}
+.director-switch{background:var(--subtle);border:1px solid var(--line);color:var(--ink);border-radius:8px;font-size:11px;font-weight:720;padding:10px 14px;min-height:40px;white-space:nowrap}
+.director-switch.active{background:var(--ink);color:var(--ink-inverse);border-color:var(--ink)}
+.director-tags{display:flex;gap:13px;flex-wrap:wrap;margin-top:18px}
+.director-tags span{font-size:9px;font-weight:740;letter-spacing:.105em;color:var(--accent)}
+.director-rendering{border:1px solid var(--line);border-radius:8px;padding:10px 13px;display:flex;flex-direction:column;justify-content:center;gap:5px;background:var(--subtle)}
+.director-rendering span{font-size:10px;color:var(--muted);font-weight:710}
+.director-rendering strong{font-size:13px;font-weight:680;color:var(--ink)}
+.director-auto{border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:20px}
+.director-auto p{font-size:12px;color:var(--muted);line-height:1.65}
+.director-auto .shoot-primary{margin-top:9px}
+@media(max-width:390px){.director-panel{padding:16px}.director-switch{padding:9px 11px}.director-tags{gap:8px}.director-tags span{font-size:8px}}
