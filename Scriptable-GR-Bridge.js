@@ -184,20 +184,27 @@ function numericISO(v) {
   const n=Number(v);return Number.isInteger(n)&&n>=100&&n<=102400?n:null;
 }
 async function readISOState() {
-  // Some Ricoh firmwares expose only /v1/props for GET; prefer dedicated params.
+  // Read-only. GET /v1/props is documented; some firmware also responds to
+  // GET /v1/params/camera. Never expose credentials to the WebView.
   let data;
-  try { data=await cameraRequest("/v1/params/camera","GET"); }
-  catch(e) { data=await cameraRequest("/v1/props","GET"); }
-  if(!data || typeof data!=="object")throw Error("Camera settings response missing.");
-  if(data.sv===undefined || !Array.isArray(data.svList) || data.svList.length===0) {
+  try{data=await cameraRequest("/v1/params/camera","GET")}
+  catch(e){data=await cameraRequest("/v1/props","GET")}
+  if(!data||typeof data!=="object")throw Error("Camera settings response missing.");
+  if(["sv","svList","tv","tvList","av","avList","exposureMode"]
+     .some(k=>data[k]===undefined||(k.endsWith("List")&&(!Array.isArray(data[k])||!data[k].length)))){
     const props=await cameraRequest("/v1/props","GET");
-    data={...props,...data,svList:Array.isArray(data.svList)&&data.svList.length?data.svList:props.svList};
+    const merged={...props,...data};
+    for(const key of ["svList","tvList","avList"]){
+      if(!Array.isArray(data[key])||!data[key].length)merged[key]=props[key];
+    }
+    data=merged;
   }
-  const list=Array.isArray(data.svList)?data.svList.map(String):[];
   const iso=data.sv===undefined?null:String(data.sv);
-  if(!iso)throw Error("Camera did not provide its current ISO (sv).");
-  return {iso,isoOptions:list,exposureMode:String(data.exposureMode||"unknown"),
-    shutter:String(data.tv||""),aperture:String(data.av||""),
+  if(!iso)throw Error("Camera did not provide current ISO (sv).");
+  const list=k=>Array.isArray(data[k])?data[k].map(String):[];
+  return {iso,isoOptions:list("svList"),exposureMode:String(data.exposureMode||"unknown"),
+    shutter:data.tv===undefined?"":String(data.tv),shutterOptions:list("tvList"),
+    aperture:data.av===undefined?"":String(data.av),apertureOptions:list("avList"),
     compensation:String(data.xv||"")};
 }
 async function writeCameraISO(isoToken) {
@@ -271,6 +278,78 @@ async function setVerifiedISO(payload) {
   }
   return {before:current.iso,after:after.iso,verified:true,exposureMode:after.exposureMode,cinematic};
 }
+// Shutter/aperture changes: individually authorized one-step camera operations.
+// Unknown/missing camera option lists fail closed. No arbitrary control keys.
+// tv "1.125" means 1/125 s, NOT 1.125 seconds.
+function secondsFromTv(token){
+  const m=/^1\.(\d+)$/.exec(String(token));
+  if(!m)return null;
+  const denom=Number(m[1]);
+  return Number.isInteger(denom)&&denom>0?1/denom:null;
+}
+function fNumber(token){
+  const n=Number(token);
+  return Number.isFinite(n)&&n>=2.8&&n<=16?n:null;
+}
+function buildExposureStep(current,field,direction,scene){
+  if(!/^(M|manual)$/i.test(current.exposureMode))
+    throw Error("Exposure write blocked: select M mode on the camera.");
+  if(!/^\d+$/.test(current.iso))
+    throw Error("Exposure write blocked: fixed numeric ISO required.");
+  if(!["tv","av"].includes(field)||!["brighter","darker"].includes(direction))
+    throw Error("Unsupported exposure adjustment requested.");
+  if(!secondsFromTv(current.shutter)||fNumber(current.aperture)===null)
+    throw Error("Camera values are missing or ambiguous; no exposure write.");
+  const options=field==="tv"?current.shutterOptions:current.apertureOptions;
+  if(!Array.isArray(options)||!options.length)
+    throw Error("Camera did not report supported "+field+" values; write disabled.");
+  const minShutter=scene==="running"?1/250:scene==="people"?1/125:scene==="portrait"?1/60:1/30;
+  const allowed=options.map(String).filter(value=>field==="tv"
+    ?secondsFromTv(value)!==null&&secondsFromTv(value)>=1/1000&&secondsFromTv(value)<=minShutter
+    :fNumber(value)!==null).filter((value,i,arr)=>arr.indexOf(value)===i);
+  const source=field==="tv"?current.shutter:current.aperture;
+  if(!allowed.includes(source))
+    throw Error("Current "+field+" not in the safe camera-supported range. Set it on the camera first.");
+  const brightness=value=>field==="tv"?Math.log2(secondsFromTv(value)):-2*Math.log2(fNumber(value));
+  allowed.sort((a,b)=>brightness(a)-brightness(b));
+  const target=allowed[allowed.indexOf(source)+(direction==="brighter"?1:-1)];
+  if(!target)throw Error("No further camera-supported step in that direction.");
+  const delta=brightness(target)-brightness(source);
+  if(!Number.isFinite(delta)||Math.abs(delta)>.6)
+    throw Error("Camera's next step is larger than the permitted 0.6 EV.");
+  return {field,from:source,to:target,deltaEV:Math.round(delta*100)/100};
+}
+async function setVerifiedExposure(payload){
+  const p=payload||{};
+  const current=await readISOState();
+  const expected=p.expected;
+  if(!expected||typeof expected!=="object"||
+     !["iso","shutter","aperture","exposureMode"].every(k=>String(expected[k]||"")===String(current[k]||"")))
+    throw Error("Camera exposure state changed since confirmation; refresh before applying.");
+  const step=buildExposureStep(current,p.field,p.direction,p.scene);
+  const req=new Request(CAMERA+"/v1/params/camera");
+  req.allowInsecureRequest=true;
+  req.method="PUT";
+  req.headers={"Content-Type":"application/x-www-form-urlencoded","Accept":"application/json"};
+  req.body=step.field+"="+encodeURIComponent(step.to);
+  req.timeoutInterval=15;
+  // A timeout is ambiguous: never retry this PUT automatically.
+  const raw=await req.loadString();
+  const code=req.response?req.response.statusCode:0;
+  if(code<200||code>=300)throw Error("Exposure write rejected (HTTP "+code+").");
+  let reply;try{reply=JSON.parse(raw)}catch(e){throw Error("Exposure write response was not JSON; refresh camera settings before retrying.");}
+  if(reply.errCode!==undefined&&![0,200,"0","200"].includes(reply.errCode))
+    throw Error("Exposure write rejected by camera: "+String(reply.errCode));
+  const after=await readISOState();
+  const key=step.field==="tv"?"shutter":"aperture";
+  if(after[key]!==step.to)
+    throw Error("Camera did not confirm "+step.field+" update. Expected "+step.to+", read "+after[key]+".");
+  if(after.exposureMode!==current.exposureMode||after.iso!==current.iso||
+     (key==="shutter"&&after.aperture!==current.aperture)||
+     (key==="aperture"&&after.shutter!==current.shutter))
+    throw Error("Camera changed another exposure setting. Stop and inspect the camera.");
+  return {verified:true,field:step.field,before:step.from,after:after[key],deltaEV:step.deltaEV};
+}
 async function handle(message) {
   switch(message.op) {
     case "ping": return await cameraRequest("/v1/ping");
@@ -282,6 +361,7 @@ async function handle(message) {
     case "clearPending": persistPending(null); return {cleared:true};
     case "getSettings": return await readISOState();
     case "setISO": return await setVerifiedISO(message.payload);
+    case "setExposureStep": return await setVerifiedExposure(message.payload);
     default: throw Error("Unsupported camera command: "+message.op);
   }
 }
@@ -326,7 +406,7 @@ try {
   // Queue-based bridge: Scriptable processes camera requests outside WebKit.
   await view.evaluateJavaScript(
     "(function(){window.__kkJobs=[];window.__kkPending={};window.__kkSerial=0;" +
-    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;var wait=(op==='capturePreview'||op==='setISO')?110000:op==='recoverCapture'?85000:op==='latestPreview'?65000:45000;var timer=setTimeout(function(){if(window.__kkPending[id]){delete window.__kkPending[id];resolve({error:'Scriptable bridge timed out during '+op+'. Open the script again or check camera Wi-Fi.'})}},wait);window.__kkPending[id]=function(result){clearTimeout(timer);resolve(result)};window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
+    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;var wait=(op==='capturePreview'||op==='setISO'||op==='setExposureStep')?110000:op==='recoverCapture'?85000:op==='latestPreview'?65000:45000;var timer=setTimeout(function(){if(window.__kkPending[id]){delete window.__kkPending[id];resolve({error:'Scriptable bridge timed out during '+op+'. Open the script again or check camera Wi-Fi.'})}},wait);window.__kkPending[id]=function(result){clearTimeout(timer);resolve(result)};window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
     "window.__kkReceive=function(x){var fn=window.__kkPending[x.id];if(fn){delete window.__kkPending[x.id];fn(x.result)}};return true})()",
     false
   );
