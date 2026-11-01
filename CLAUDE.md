@@ -67,3 +67,12 @@ Investigate a viable path with careful real-world tests on **iPhone Safari**. Po
 4. Begin with the highest-value camera-independent improvements while separately researching GR IIIx / iOS networking feasibility.
 
 The goal: **the best independent Ricoh GR IIIx companion possible, without losing a trustworthy, local-first foundation.**
+
+## Adaptive Capture extension (implemented in main)
+
+- `adaptive.js` + `adaptive.css`: new Adaptive tab, local pixel analysis, moody/balanced/bright creative targets, ISO/shutter recommendations, comparison, camera-bridge adapter, guarded automatic capture state machine.
+- `Scriptable-GR-Bridge.js`: optional **no-Xcode** iPhone Scriptable WebView host that loads cached UI from this GitHub repo, tests camera ping/props, takes a deliberate test shot, and attempts to fetch a new JPEG preview using native HTTP requests.
+- `ADAPTIVE.md`: operational instructions and limitations.
+- The bridge is **experimental and untested on physical camera**. Its `setISO` operation throws, and the UI's `verified` flag defaults to false, so the automatic camera-adjustment button is correctly disabled.
+- After real-world camera tests, implement an explicit ISO calibration/read-back with safe restore before allowing automatic writes. Never enable auto-correction through a flag change alone. Keep a max-three-shot bound and always preserve originals.
+- New source is standalone incremental addition. Keep existing app tabs working and ensure service worker caches the new assets.
