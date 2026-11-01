@@ -38,3 +38,9 @@ Cinematic is a preview-based heuristic, not true AI scene recognition; it does *
 Under **Shoot → Advanced controls → Exposure Studio**, the app now provides cautious **one-step shutter and aperture changes on the camera**. Each action requires explicit authorization, a camera-reported supported value, M mode with fixed ISO, no stale settings, and successful read-back. An Undo control reverses the last confirmed step when still safe. No automatic shutter or aperture writes are enabled.
 
 See [EXPOSURE.md](./EXPOSURE.md) for the actual control limits, update steps, and physical-camera testing instructions. This new write path has passed simulations but has not yet been verified on the user's GR IIIx.
+
+## Coordinated Director (v2)
+
+Cinematic Director now evaluates the camera's actual ISO, shutter and aperture and proposes **one scene-aware step**. For motion it prioritizes a safe shutter; for stationary compositions it may prefer a slower shutter; for portraits it may prefer aperture. Use **Shoot → Cinematic Director → Capture & analyze → Apply Director step**, explicitly authorizing the one camera change. After any change, capture a *fresh* frame before another Director write. Imported or older images are review-only.
+
+This is **supervised control**, not unattended three-parameter automation: shutter/aperture writes still need confirmation on the user's physical camera. The existing automatic Director pass remains ISO-only. See [DIRECTOR.md](./DIRECTOR.md).
