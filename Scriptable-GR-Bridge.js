@@ -235,16 +235,41 @@ async function setVerifiedISO(payload) {
   const requested=payload&&payload.iso;
   const maxISO=payload&&Number(payload.maxISO);
   if(Number.isInteger(maxISO)&&maxISO>=100&&maxISO<=102400)current.maxISO=maxISO;
+  // Cinematic Director has an independent, hardware-side safety policy.
+  // An arbitrary WebView request cannot bypass manual mode, fixed ISO or the
+  // per-step limit; camera-advertised ISO options still determine the final token.
+  const cinematic=payload&&payload.policy==="cinematic";
+  if(cinematic){
+    if(!/^(m|manual)$/i.test(current.exposureMode))
+      throw Error("Cinematic ISO write blocked: camera must be in M exposure mode.");
+    if(!/^\\d+$/.test(current.iso))
+      throw Error("Cinematic ISO write blocked: fixed manual ISO required.");
+    if(payload.expectedShutter!==undefined && String(payload.expectedShutter)!==current.shutter)
+      throw Error("Cinematic shutter setting changed since analysis. Refresh camera settings.");
+    if(payload.expectedAperture!==undefined && String(payload.expectedAperture)!==current.aperture)
+      throw Error("Cinematic aperture setting changed since analysis. Refresh camera settings.");
+    current.maxISO=Math.min(current.maxISO||6400,6400);
+  }
   const token=validateToken(requested,current);
   if(!payload || payload.expected!==current.iso)
     throw Error("Camera ISO has changed since last read. It is "+current.iso+". Refresh settings and try again.");
+  if(cinematic && Math.abs(Math.log2(Number(token)/Number(current.iso)))>.85)
+    throw Error("Cinematic ISO change exceeds one cautious camera step; write blocked.");
   if(token===current.iso)return {before:current.iso,after:current.iso,verified:false,
       same:true,exposureMode:current.exposureMode,
       message:"Camera is already at requested ISO; no write performed."};
   await writeCameraISO(token);
   const after=await readISOState();
   if(after.iso!==token)throw Error("ISO write not verified. Requested "+token+", camera reads "+after.iso+".");
-  return {before:current.iso,after:after.iso,verified:true,exposureMode:after.exposureMode};
+  if(cinematic){
+    if(!/^(m|manual)$/i.test(after.exposureMode))
+      throw Error("ISO changed, but camera no longer reports M mode. Stop and inspect the camera.");
+    if(current.shutter && after.shutter && after.shutter!==current.shutter)
+      throw Error("ISO changed, but shutter value changed too. Stop and inspect the camera.");
+    if(current.aperture && after.aperture && after.aperture!==current.aperture)
+      throw Error("ISO changed, but aperture value changed too. Stop and inspect the camera.");
+  }
+  return {before:current.iso,after:after.iso,verified:true,exposureMode:after.exposureMode,cinematic};
 }
 async function handle(message) {
   switch(message.op) {
