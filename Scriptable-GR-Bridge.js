@@ -80,16 +80,17 @@ async function handle(message) {
   }
 }
 async function syncUI(){
-  let synced=0;
+  let synced=0,online=true;
   for(const file of FILES){
+    if(!online)break;
     try{
       const r=new Request(SOURCE+file);
-      r.timeoutInterval=8;
+      r.timeoutInterval=4;
       const data=await r.load();
       if(r.response && r.response.statusCode!==200)throw Error("HTTP "+r.response.statusCode);
       fm.write(fm.joinPath(folder,file),data);
       synced++;
-    }catch(e){messages.push(file+": "+e.message)}
+    }catch(e){messages.push("Using cached interface; update unavailable: "+e.message);online=false}
   }
   if(!fm.fileExists(fm.joinPath(folder,"index.html")))throw Error("No cached UI. Run the script once while your iPhone has internet access.");
   return synced;
