@@ -22,7 +22,7 @@ This is a **static, local-first Progressive Web App** compatible with Vercel's s
 
 ## Not yet implemented
 
-- GR IIIx remote control, live view, camera-controlled intervals, reading/writing camera properties or film settings: needs a compatible **local bridge** or native networking. HTTPS sites ordinarily cannot fetch `http://192.168.0.1` due to mixed-content/CORS and iOS browser limitations. **A Vercel server-side proxy cannot access a camera inside your local Wi-Fi.**
+- Full GR IIIx remote operation (live view, focus, shutter/aperture controls, and film simulations) is not yet implemented. The optional Scriptable bridge now has **experimental real camera ISO control**, a manual Apply/Undo flow, and a bounded Auto Correct loop. ISO writes remain untested on the physical camera. HTTPS sites ordinarily cannot fetch `http://192.168.0.1` due to mixed-content/CORS and iOS browser limitations. **A Vercel server-side proxy cannot access a camera inside your local Wi-Fi.**
 - Automated photo strips, RAW/DNG display/processing, true EXIF-based insights, cloud sync or camera photo transfer.
 
 ## Privacy
@@ -31,6 +31,6 @@ All locally imported images, GPS tracks, and recipes remain in your own browser 
 
 ## Adaptive Capture (new)
 
-The **Adaptive** tab adds private on-device review of JPEG/HEIC test shots: median brightness, approximate clipped highlights and dark pixel percentages, ISO recommendations bounded by a user-defined limit, and before/after comparisons. The optional [Scriptable bridge](./Scriptable-GR-Bridge.js) can run the UI offline on iPhone and attempt Wi-Fi read-only camera requests and a deliberate test shutter, without Xcode or Vercel. **Automatic settings adjustment is intentionally locked pending real-camera ISO write/read-back tests.**
+The **Adaptive** tab adds private on-device review of JPEG/HEIC test shots: median brightness, approximate clipped highlights and dark pixel percentages, ISO recommendations bounded by a user-defined limit, and before/after comparisons. The optional [Scriptable bridge](./Scriptable-GR-Bridge.js) can run the UI offline on iPhone and attempt Wi-Fi read-only camera requests and a deliberate test shutter, without Xcode or Vercel. **Apply suggested ISO** changes the actual camera setting through Scriptable, requires explicit consent, and confirms the new setting by read-back. **Auto Correct** unlocks only after a verified ISO change and requires M mode with fixed ISO. This new write path requires physical-camera testing.
 
 Start with [ADAPTIVE.md](./ADAPTIVE.md) for install steps, limitations and the hardware test plan. Chrome/Safari on Vercel can use the photo analyzer but cannot directly control the local HTTP camera.
