@@ -36,7 +36,7 @@ function evaluate(metrics){
    text="Deep shadows can be intentional. Review your subject before raising exposure; no automatic brightening recommended.";
  }else if(mid<57 && dark<45 && clipped<.35){
    ev=.3;label="Lift the subject gently.";reason="gentle_lift";
-   text="The preview looks underexposed without extensive shadow areas. A small ISO increase may help, but judge the subject.";
+   text="The preview looks underexposed without extensive shadow areas. A modest exposure lift may help, but judge the subject.";
  }
  ev=Math.round(clamp(ev,-MAX_STEP,MAX_STEP)*100)/100;
  return {valid:true,ev,ready:Math.abs(ev)<.25,label,reason,text,confidence:"heuristic",clipped,mid,dark};
@@ -68,6 +68,7 @@ function coordinate(metrics,settings,scene,options){
    return no("exposure_unavailable","Shutter or aperture values were not reported reliably. Review the camera controls.");
  const sign=assessment.ev>0?"brighter":"darker";
  const sceneName=["people","running","portrait","still"].includes(scene)?scene:"people";
+ if(Number(settings.iso)>ISO_LIMIT)return no("iso_over_limit","Set a fixed ISO of 6400 or lower before Director adjusts any exposure setting.");
  const shutterSeconds=exposure.tvSeconds(settings.shutter);
  const minimum=sceneName==="running"?1/250:sceneName==="people"?1/125:sceneName==="portrait"?1/60:1/30;
  if(!shutterSeconds||shutterSeconds>minimum)
