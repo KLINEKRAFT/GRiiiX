@@ -174,7 +174,8 @@ function validateToken(target,previous) {
   }
   const desired=numericISO(target);
   if(desired==null)throw Error("ISO must be an integer from 100 to 102400.");
-  const candidate=options.filter(v=>numericISO(v)!=null).sort((a,b)=>
+  const desiredCeiling=Number.isInteger(previous.maxISO)?previous.maxISO:102400;
+  const candidate=options.filter(v=>numericISO(v)!=null && numericISO(v)<=desiredCeiling).sort((a,b)=>
     Math.abs(Math.log2(Number(a)/desired))-Math.abs(Math.log2(Number(b)/desired)))[0];
   if(!candidate)throw Error("Camera reported no writable manual ISO values.");
   return candidate;
@@ -182,6 +183,8 @@ function validateToken(target,previous) {
 async function setVerifiedISO(payload) {
   const current=await readISOState();
   const requested=payload&&payload.iso;
+  const maxISO=payload&&Number(payload.maxISO);
+  if(Number.isInteger(maxISO)&&maxISO>=100&&maxISO<=102400)current.maxISO=maxISO;
   const token=validateToken(requested,current);
   if(!payload || payload.expected!==current.iso)
     throw Error("Camera ISO has changed since last read. It is "+current.iso+". Refresh settings and try again.");
@@ -239,7 +242,7 @@ try {
   // Queue-based bridge: Scriptable processes camera requests outside WebKit.
   await view.evaluateJavaScript(
     "(function(){window.__kkJobs=[];window.__kkPending={};window.__kkSerial=0;" +
-    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;var wait=op==='capturePreview'?75000:op==='latestPreview'?45000:30000;var timer=setTimeout(function(){if(window.__kkPending[id]){delete window.__kkPending[id];resolve({error:'Scriptable bridge timed out during '+op+'. Open the script again or check camera Wi-Fi.'})}},wait);window.__kkPending[id]=function(result){clearTimeout(timer);resolve(result)};window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
+    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;var wait=(op==='capturePreview'||op==='setISO')?85000:op==='latestPreview'?45000:35000;var timer=setTimeout(function(){if(window.__kkPending[id]){delete window.__kkPending[id];resolve({error:'Scriptable bridge timed out during '+op+'. Open the script again or check camera Wi-Fi.'})}},wait);window.__kkPending[id]=function(result){clearTimeout(timer);resolve(result)};window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
     "window.__kkReceive=function(x){var fn=window.__kkPending[x.id];if(fn){delete window.__kkPending[x.id];fn(x.result)}};return true})()",
     false
   );
