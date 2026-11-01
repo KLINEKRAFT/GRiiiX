@@ -28,3 +28,9 @@ This is a **static, local-first Progressive Web App** compatible with Vercel's s
 ## Privacy
 
 All locally imported images, GPS tracks, and recipes remain in your own browser storage; there are no outgoing analytics or server-side uploads in this prototype. Uninstalling, clearing site data, or iOS storage cleanup may erase them.
+
+## Adaptive Capture (new)
+
+The **Adaptive** tab adds private on-device review of JPEG/HEIC test shots: median brightness, approximate clipped highlights and dark pixel percentages, ISO recommendations bounded by a user-defined limit, and before/after comparisons. The optional [Scriptable bridge](./Scriptable-GR-Bridge.js) can run the UI offline on iPhone and attempt Wi-Fi read-only camera requests and a deliberate test shutter, without Xcode or Vercel. **Automatic settings adjustment is intentionally locked pending real-camera ISO write/read-back tests.**
+
+Start with [ADAPTIVE.md](./ADAPTIVE.md) for install steps, limitations and the hardware test plan. Chrome/Safari on Vercel can use the photo analyzer but cannot directly control the local HTTP camera.
