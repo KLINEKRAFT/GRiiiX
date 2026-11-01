@@ -51,6 +51,7 @@ function view(){
  '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">LIVE CAMERA SETTINGS</div><h2>Apply an adjustment</h2></div><span class="ac-pill '+(A.settings?"good":"")+'">'+(A.settings?"Camera read":"Not read")+'</span></div>'+
  '<div class="ac-metrics"><div><small>CAMERA ISO</small><strong>'+safe(A.settings?.iso||"—")+'</strong></div><div><small>MODE</small><strong>'+safe(A.settings?.exposureMode||"—")+'</strong></div><div><small>APERTURE</small><strong>'+safe(A.settings?.aperture||"—")+'</strong></div></div>'+
  '<p class="ac-small">The adjustment is sent to the GR IIIx itself, then checked against the camera’s reported ISO. For the first test, use a fixed ISO rather than Auto ISO. In auto-exposure modes, the camera may compensate with another setting.</p>'+
+ '<label class="ac-check"><input id="acApplyConsent" type="checkbox"> I authorize changing the actual camera ISO for the next photo. The app will read it back and show the confirmed value.</label>'+
  '<div class="ac-actions"><button class="ac-button light" data-ac="settings" '+(!active||A.busy?"disabled":"")+'>Refresh camera ISO</button><button class="ac-button" data-ac="apply" '+(!active||!A.settings||!last||A.busy?"disabled":"")+'>Apply suggested ISO</button><button class="ac-button light" data-ac="restore" '+(!active||!A.undoISO||A.busy?"disabled":"")+'>Undo ISO change</button></div></div>'+
  '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">PHOTO REVIEW</div><h2>Analyze a shot</h2></div><span class="ac-pill">'+A.shots.length+' photos</span></div><label class="ac-button ac-picker">Import photographs<input id="acPhotos" type="file" accept="image/*" multiple hidden></label> <button class="ac-button light" data-ac="clear" '+(!A.shots.length?"disabled":"")+'>Clear</button><p class="ac-small">Compatible JPEG / HEIC images are processed only on-device. RAW requires a rendered preview.</p></div>'+
  (last?result(last):'<div class="ac-card ac-empty">Import a photograph to see exposure, highlight, and shadow analysis.</div>')+
@@ -85,6 +86,7 @@ async function refreshExposure(){
 async function applySuggestion(){
  if(!A.connected||!A.shots.length){message("Connect the camera and analyze a photograph first.");return}
  if(A.busy)return;
+ if(!$("acApplyConsent")?.checked){message("Check the Apply ISO consent box before changing the camera.");return}
  try{
   A.busy=true;message("Reading live ISO before making any adjustment…");
   const current=await readSettings();
@@ -93,9 +95,6 @@ async function applySuggestion(){
   const suggested=guide(A.shots[A.shots.length-1].data);
   if(Math.abs(suggested.ev)<.3){message("No ISO change needed for the selected look.");return}
   const proposed=Math.min(A.max,suggested.iso);
-  if(!confirm("Change camera ISO from "+current.iso+" toward "+proposed+"?\nThis modifies the actual GR IIIx shooting setting.")){
-   message("Camera setting change cancelled.");return;
-  }
   message("Sending ISO adjustment to your GR IIIx…");
   const result=await native("setISO",{iso:proposed,expected:current.iso,maxISO:A.max});
   const checked=await readSettings();
@@ -113,7 +112,6 @@ async function restoreISO(){
  if(!A.connected||!A.undoISO||A.busy)return;
  try{
   A.busy=true;const live=await readSettings();
-  if(!confirm("Restore previous camera ISO "+A.undoISO+"?"))return;
   const result=await native("setISO",{iso:A.undoISO,expected:live.iso});
   if(result.verified===true || result.same){
     await readSettings();A.undoISO=null;message("Camera ISO restored to "+A.settings.iso+".");
