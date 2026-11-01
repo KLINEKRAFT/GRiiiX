@@ -5,7 +5,7 @@
 // This is NOT an official Ricoh app. Only read-only operations and a deliberate test shutter
 // are supported. ISO writes require explicit app consent and camera read-back.
 const SOURCE = "https://raw.githubusercontent.com/KLINEKRAFT/GRiiiX/main/";
-const FILES = ["index.html", "adaptive.js", "adaptive.css", "studio.css", "icon.svg", "manifest.webmanifest", "sw.js"];
+const FILES = ["index.html", "director.js", "adaptive.js", "adaptive.css", "studio.css", "icon.svg", "manifest.webmanifest", "sw.js"];
 const CAMERA = "http://192.168.0.1";
 const fm = FileManager.local();
 const folder = fm.joinPath(fm.documentsDirectory(), "KlinekraftGR");
