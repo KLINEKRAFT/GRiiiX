@@ -238,6 +238,22 @@ if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.
 window.KKAdaptive={view,metrics,guide,connect,state:A};
 function iconSvg(d){return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>'}
 pages.adaptive=view;
+pages.recipes=function(){
+ const list=state.recipes.map(r=>{
+  const selected=state.active===r.id;
+  return '<article class="look-item"><div class="look-main"><span class="look-symbol">'+(selected?'●':'○')+'</span><div class="look-copy"><h2>'+safe(r.name)+'</h2><p>'+safe(r.look)+' <span>·</span> '+safe(r.shutter)+' <span>·</span> '+safe(r.aperture)+' <span>·</span> '+safe(r.iso)+'</p>'+(r.note?'<small>'+safe(r.note)+'</small>':'')+'</div><div class="look-indicator">'+(selected?'IN USE':'')+'</div></div><div class="look-actions"><button data-select="'+safe(r.id)+'" '+(selected?'disabled':'')+'>'+(selected?'Selected':'Select look')+'</button><button data-edit="'+safe(r.id)+'">Edit</button><button data-delete="'+safe(r.id)+'">Remove</button></div></article>';
+ }).join('');
+ return '<div class="shoot-intro"><div class="shoot-kicker">YOUR PERSONAL PALETTE</div><div class="collection-heading"><h1>Looks.</h1><button data-action="new">New look +</button></div><p class="shoot-subtitle">Save the settings behind the photographs you love.</p></div>'+
+ '<div class="look-list">'+list+'</div>'+
+ '<div class="collection-tools"><button data-action="import">Import JSON</button><button data-action="export">Export collection</button></div>'+
+ '<p class="collection-note">Selecting a look changes the reference in this app. It does not automatically modify the GR IIIx.</p>';
+};
+pages.library=function(){
+ const count=state.photos.length;
+ return '<div class="shoot-intro"><div class="shoot-kicker">THE PRIVATE COLLECTION</div><div class="collection-heading"><h1>Library.</h1><button data-action="photos">Import +</button></div><p class="shoot-subtitle">'+count+' photograph'+(count===1?'':'s')+' saved locally on this device.</p></div>'+
+ (count?'<div class="collection-gallery">'+state.photos.slice().reverse().map(p=>'<button class="collection-photo" data-photo="'+safe(p.id)+'"><img src="'+safe(p.url)+'" loading="lazy" alt="'+safe(p.name)+'"></button>').join('')+'</div>':'<div class="collection-empty"><span>✳</span><h2>A place for your photographs.</h2><p>Import from Photos or Files to begin a private collection.</p><button data-action="photos">Choose photographs</button></div>')+
+ '<p class="collection-note">Photos are stored in your browser on this iPhone, not uploaded to a server. Keep your original images backed up elsewhere.</p>';
+};
 pages.more=function(){
  return '<div class="shoot-intro"><div class="shoot-kicker">THE PHOTOGRAPHER’S TOOLKIT</div><h1>Beyond the frame.</h1><p class="shoot-subtitle">The essentials, when you need them.</p></div>'+
  '<div class="more-links">'+
