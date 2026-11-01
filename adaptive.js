@@ -1,7 +1,7 @@
 /* Adaptive Capture: browser-local image review + optional Scriptable camera bridge */
 (function(){
 "use strict";
-const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false,directorOn:false};
+const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false,directorOn:false,undoExposure:null};
 const $=id=>document.getElementById(id);
 const safe=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
@@ -47,6 +47,28 @@ async function addFiles(files){if(A.busy)return;A.busy=true;message("Inspecting 
 function result(shot){let d=shot.data,g=guide(d);
  return '<div class="ac-card"><b>'+safe(shot.name)+'</b><img class="ac-photo" src="'+safe(shot.url)+'" alt="Analyzed photograph"><div class="ac-metrics"><div><small>MEDIAN TONE</small><strong>'+d.mid+'</strong></div><div><small>CLIPPED WHITE</small><strong>'+d.clipped.toFixed(1)+'%</strong></div><div><small>DEEP SHADOWS</small><strong>'+d.dark.toFixed(1)+'%</strong></div></div><div class="ac-blue"><b>Next-shot recommendation</b><p>'+safe(g.text)+'</p><p>Suggested ISO: <b>'+g.iso+'</b> · Suggested minimum shutter: <b>'+g.shutter+'</b> · Change: <b>'+g.ev.toFixed(1)+' stops</b></p></div><p class="ac-small">Edge detail: '+d.edge.toFixed(1)+'. This is a heuristic, not a reliable focus or motion-blur detector. A moody photograph may deliberately contain many dark pixels.</p></div>';
 }
+function exposureControls(active){
+ const lib=window.KKExposure;
+ const settings=A.settings;
+ const gate=lib&&settings?lib.preflight(settings):{ok:false,reason:"Connect to the camera and refresh exposure settings."};
+ const ready=!!active&&!A.busy&&!!gate.ok;
+ const controls=[
+  ["tv","brighter","Slower shutter"],["tv","darker","Faster shutter"],
+  ["av","brighter","Wider aperture"],["av","darker","Narrower aperture"]
+ ];
+ const button=([field,direction,label])=>{
+  const p=ready?lib.propose(settings,field,direction,A.scene):{ok:false};
+  return '<button class="exposure-choice" data-ac="exposure" data-exfield="'+field+'" data-exdirection="'+direction+'" '+(!p.ok?'disabled':'')+'><b>'+label+'</b><small>'+(p.ok?lib.display(field,p.from)+' → '+lib.display(field,p.to):'Unavailable')+'</small></button>';
+ };
+ return '<div class="shoot-section-title">EXPOSURE STUDIO</div>'+
+ '<p class="shoot-small">One deliberate setting at a time. The GR IIIx confirms every change. Only available in M mode with fixed ISO.</p>'+
+ '<div class="exposure-readouts"><div><span>SHUTTER</span><strong>'+safe(lib?.display("tv",settings?.shutter)||"—")+'</strong></div><div><span>APERTURE</span><strong>'+safe(lib?.display("av",settings?.aperture)||"—")+'</strong></div><div><span>ISO</span><strong>'+safe(settings?.iso||"—")+'</strong></div></div>'+
+ (!gate.ok?'<p class="shoot-small">'+safe(gate.reason)+'</p>':'')+
+ '<label class="shoot-consent"><input id="acExposureConsent" type="checkbox"><span>Authorize one shutter or aperture adjustment on my camera</span></label>'+
+ '<div class="exposure-controls">'+controls.map(button).join("")+'</div>'+
+ '<div class="shoot-tool-actions"><button data-ac="undoExposure" '+(!active||!A.undoExposure||A.busy?'disabled':'')+'>Undo last exposure step</button></div>'+
+ '<p class="shoot-small">No automatic shutter or aperture changes yet. Moving subjects require a safe shutter speed, and every step is limited to 0.6 EV.</p>';
+}
 function view(){
  const shot=A.shots[A.shots.length-1];
  const active=A.connected&&!!bridge();
@@ -82,6 +104,7 @@ function view(){
  '<details class="shoot-advanced" data-grdetails '+(A.detailsOpen?'open':'')+'><summary><span>Advanced controls</span><span>Camera tools & diagnostics</span></summary><div class="shoot-advanced-body">'+
  '<div class="shoot-section-title">CAMERA CONTROL</div><div class="shoot-tool-actions"><button data-ac="settings" '+(!active||A.busy?'disabled':'')+'>Refresh camera ISO</button><button data-ac="latest" '+(!active||A.busy?'disabled':'')+'>Review most recent</button><button data-ac="check" '+(!active||A.busy?'disabled':'')+'>Check SD card</button></div>'+
  '<div class="shoot-advanced-grid"><label>Current ISO<input type="number" id="acIso" min="100" max="102400" value="'+A.iso+'"></label><label>Maximum ISO<input type="number" id="acMax" min="100" max="102400" value="'+A.max+'"></label></div>'+
+ exposureControls(active)+
  '<div class="shoot-section-title">AUTOMATIC CAPTURE</div><p class="shoot-small">After one confirmed ISO change in M mode, capture and review up to 3 frames automatically. The camera keeps its originals.</p><label class="shoot-consent"><input id="acConsent" type="checkbox">Authorize the automatic capture sequence</label>'+
  '<div class="shoot-tool-actions"><button data-ac="auto" '+(!active||!A.verified||A.busy||A.recoveryPending?'disabled':'')+'>Auto correct</button><button data-ac="stop" '+(!A.busy?'disabled':'')+'>Stop</button></div>'+
  (director?'<div class="director-auto"><span class="shoot-section-title">CINEMATIC DIRECTOR PASS</span><p>Two frames maximum. Review the first; apply a confirmed ISO adjustment only when necessary.</p><label class="shoot-consent"><input id="acDirectorConsent" type="checkbox">Authorize two captures and verified ISO changes</label><button class="shoot-primary" data-ac="direct" '+(!active||!A.verified||A.busy||A.recoveryPending?'disabled':'')+'>Run Director pass</button></div>':'')+
@@ -152,6 +175,49 @@ async function restoreISO(){
   }else throw Error("Camera did not verify restore");
  }catch(e){message("Restore failed: "+e.message)}
  finally{A.busy=false;refresh()}
+}
+async function applyExposureStep(field,direction,undo=false){
+ if(A.busy||!A.connected){message("Connect to your Ricoh before changing exposure.");return}
+ if(!undo&&!$("acExposureConsent")?.checked){
+  message("Authorize one exposure change before adjusting shutter or aperture.");return
+ }
+ let commandSent=false;
+ try{
+  A.busy=true;message("Reading live camera exposure before the change…");
+  const current=await readSettings();
+  const lib=window.KKExposure;
+  if(!lib)throw Error("Exposure control module not loaded.");
+  const plan=lib.propose(current,field,direction,A.scene);
+  if(!plan.ok)throw Error(plan.reason);
+  if(undo){
+    if(!A.undoExposure||A.undoExposure.field!==field||plan.to!==A.undoExposure.from||current[field==="tv"?"shutter":"aperture"]!==A.undoExposure.to)
+      throw Error("The prior exposure value is no longer safe to restore. Check camera settings.");
+  }
+  commandSent=true;
+  const result=await native("setExposureStep",{field,direction,scene:A.scene,
+    expected:{iso:current.iso,shutter:current.shutter,aperture:current.aperture,exposureMode:current.exposureMode}});
+  if(!result.verified||result.after!==plan.to)throw Error("Camera did not confirm the expected exposure step.");
+  const next=await readSettings();
+  const key=field==="tv"?"shutter":"aperture";
+  if(next[key]!==plan.to||next.iso!==current.iso||next.exposureMode!==current.exposureMode||
+     (field==="tv"&&next.aperture!==current.aperture)||(field==="av"&&next.shutter!==current.shutter))
+    throw Error("Read-back mismatch. The camera may have changed another setting.");
+  if(undo){
+    A.undoExposure=null;
+    message("Previous "+(field==="tv"?"shutter":"aperture")+" restored: "+lib.display(field,plan.to)+".");
+  }else{
+    A.undoExposure={field,from:plan.from,to:plan.to,direction};
+    message("Camera confirmed "+lib.display(field,plan.from)+" → "+lib.display(field,plan.to)+" ("+(plan.deltaEV>0?"+":"")+plan.deltaEV+" EV). Undo is available.");
+  }
+ }catch(e){
+  if(commandSent)A.undoExposure=null;
+  message("Exposure adjustment stopped: "+e.message+(commandSent?" Inspect the camera display before another write.":""));
+ }finally{A.busy=false;refresh()}
+}
+async function undoExposureChange(){
+ if(!A.undoExposure){message("No verified exposure change to undo.");return}
+ const last=A.undoExposure;
+ await applyExposureStep(last.field,last.direction==="brighter"?"darker":"brighter",true);
 }
 async function checkCard(){
  try{A.busy=true;message("Checking camera SD card…");const r=await native("listPhotos");
@@ -242,7 +308,7 @@ async function auto(directorPass=false){
  }catch(e){A.verified=false;message("Auto Correct stopped: "+e.message)}
  finally{A.busy=false;A.stop=false;refresh()}
 }
-document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
+document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="exposure")await applyExposureStep(x.dataset.exfield,x.dataset.exdirection);if(op==="undoExposure")await undoExposureChange();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
 document.addEventListener("change",e=>{let x=e.target;if(x.id==="acPhotos"){addFiles([...x.files]);x.value=""}
 if(x.id==="acScene"){A.scene=x.value;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
 if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.id==="acMax"){A.max=clamp(Number(x.value)||12800,100,102400);refresh()}});
