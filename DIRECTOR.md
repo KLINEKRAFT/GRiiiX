@@ -52,3 +52,19 @@ node --test tests/director.test.js
 ## Exposure Studio (manual verified controls)
 
 Additional controls now live under **Shoot → Advanced controls → Exposure Studio** for one-step faster/slower shutter and wider/narrower aperture. They require explicit consent and device-side exposure-state and range validation. **Cinematic Director continues changing only ISO automatically**, pending real-world verification of the new shutter/aperture write path. See [EXPOSURE.md](./EXPOSURE.md).
+
+## Cinematic Director v2 — coordinated exposure recommendations
+
+Director now combines its highlight/shadow analysis with live camera `sv` (ISO), `tv` (shutter), and `av` (aperture) settings to rank **one** exposure move at a time:
+
+- People and running subjects: prefer ISO so motion remains frozen; safe shutter minimums still apply.
+- Stationary subjects: can favor a modest slower shutter before increasing ISO noise, while respecting a 1/30 s floor.
+- Portraits: can favor a modest aperture adjustment before increasing ISO, within the reported f/2.8–f/16 options.
+- Clipped highlights: start by lowering ISO, then choose a safe faster shutter or narrower aperture if no valid ISO step exists.
+- Intentional dark silhouettes: no change.
+
+The coordinator only uses camera-reported values, requires M mode and fixed ISO at or below 6400, and rejects images without valid pixel statistics. The **Apply Director step** action is explicitly authorized by the user and independently checks the live camera snapshot and final read-back. It can modify a *single* ISO, shutter or aperture value. The UI then **requires a newly captured GR photo** before another Director write. Imported photos and previously saved shots can be reviewed, but they do not unlock camera writes.
+
+**Important:** The existing automatic two-frame Director pass continues to change ISO only. Automatic multi-parameter shutter/aperture writes are intentionally **not** enabled until the new Exposure Studio writes have been confirmed on this specific camera. The one-step supervised shutter/aperture controls are experimental.
+
+See [tests/coordination.test.js](./tests/coordination.test.js) for scene priorities, failure guards and consent workflow tests.
