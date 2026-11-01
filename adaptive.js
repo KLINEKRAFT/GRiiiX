@@ -43,7 +43,7 @@ async function examine(file){
   return {name:file.name,url:url,data:metrics(ctx,c.width,c.height)};
  }catch(e){URL.revokeObjectURL(url);throw e}
 }
-async function addFiles(files){if(A.busy)return;A.busy=true;message("Inspecting images locally…");try{for(const file of files.slice(0,8)){let shot=await examine(file);A.shots.push(shot)}while(A.shots.length>8)URL.revokeObjectURL(A.shots.shift().url);message("Analysis completed on your iPhone. No cloud upload.")}catch(e){message("Import failed: "+e.message)}finally{A.busy=false;refresh()}}
+async function addFiles(files){if(A.busy)return;A.directorNeedsFrame=true;A.busy=true;message("Inspecting images locally…");try{for(const file of files.slice(0,8)){let shot=await examine(file);A.shots.push(shot)}while(A.shots.length>8)URL.revokeObjectURL(A.shots.shift().url);message("Analysis completed on your iPhone. No cloud upload.")}catch(e){message("Import failed: "+e.message)}finally{A.busy=false;refresh()}}
 function result(shot){let d=shot.data,g=guide(d);
  return '<div class="ac-card"><b>'+safe(shot.name)+'</b><img class="ac-photo" src="'+safe(shot.url)+'" alt="Analyzed photograph"><div class="ac-metrics"><div><small>MEDIAN TONE</small><strong>'+d.mid+'</strong></div><div><small>CLIPPED WHITE</small><strong>'+d.clipped.toFixed(1)+'%</strong></div><div><small>DEEP SHADOWS</small><strong>'+d.dark.toFixed(1)+'%</strong></div></div><div class="ac-blue"><b>Next-shot recommendation</b><p>'+safe(g.text)+'</p><p>Suggested ISO: <b>'+g.iso+'</b> · Suggested minimum shutter: <b>'+g.shutter+'</b> · Change: <b>'+g.ev.toFixed(1)+' stops</b></p></div><p class="ac-small">Edge detail: '+d.edge.toFixed(1)+'. This is a heuristic, not a reliable focus or motion-blur detector. A moody photograph may deliberately contain many dark pixels.</p></div>';
 }
@@ -109,7 +109,7 @@ function view(){
  '<div class="shoot-section-title">THE INTENTION</div><div class="shoot-selectors"><label>Subject<select id="acScene">'+sceneOptions+'</select></label>'+(director?'<div class="director-rendering"><span>RENDERING</span><strong>Cinematic / low key</strong></div>':'<label>Rendering<select id="acIntent">'+intentOptions+'</select></label>')+'</div>'+
  (shot?'<div class="shoot-result"><div class="shoot-result-top"><div><span class="shoot-section-title">FRAME ASSESSMENT</span><h2>'+(director?safe(suggestion.label):(suggestion.ready?'On target.':suggestion.ev>0?'Needs more light.':'Protect the highlights.'))+'</h2></div><div class="shoot-ev">'+(suggestion.ev>0?'+':'')+suggestion.ev.toFixed(1)+' EV</div></div>'+
  '<p class="shoot-assessment">'+safe(suggestion.text)+'</p>'+
-(director?(A.directorNeedsFrame?'<div class="director-next"><span class="shoot-section-title">DIRECTOR / NEXT FRAME</span><h3>Capture a fresh frame.</h3><p>After a setting change, Director needs a new camera photograph before another exposure adjustment. Imported or previously saved photos can still be reviewed without changing the camera.</p></div>':directorMoveCard(coordinated,active)):
+(director?(A.directorNeedsFrame?'<div class="director-next"><span class="shoot-section-title">DIRECTOR / NEXT FRAME</span><h3>Capture a fresh frame.</h3><p>After a setting change, Director needs a new camera photograph before another exposure adjustment. Imported or previously saved photos can still be reviewed without changing the camera.</p></div>':directorMoveCard(coordinated,active&&!A.recoveryPending)):
  '<div class="shoot-iso-trace"><div><span>CAMERA ISO</span><strong>'+safe(A.settings?.iso||A.iso)+'</strong></div><div class="shoot-iso-arrow">→</div><div><span>RECOMMENDED</span><strong>'+suggestion.iso+'</strong></div><div class="shoot-iso-note">ISO ONLY</div></div>'+
  '<label class="shoot-consent"><input id="acApplyConsent" type="checkbox"><span>Allow this ISO change on my camera</span></label>'+
  '<div class="shoot-result-actions"><button class="shoot-primary" data-ac="apply" '+(!canApply?'disabled':'')+'>Apply ISO</button><button class="shoot-tertiary" data-ac="restore" '+(!active||!A.undoISO||A.busy?'disabled':'')+'>Undo</button></div>')+
@@ -174,7 +174,7 @@ async function applySuggestion(){
    throw Error("Camera did not confirm a setting change");
   }
   if(checked.iso!==result.after)throw Error("Second read-back did not match the applied ISO");
-  A.undoISO=result.before;A.verified=true;
+  A.undoISO=result.before;A.verified=true;A.directorNeedsFrame=true;
   message("Camera confirmed ISO "+result.before+" → "+result.after+". "+(A.directorOn?"Director pass is now available in Advanced controls.":"You can undo this, or try Auto Correct in M mode."));
  }catch(e){A.verified=false;message("ISO adjustment failed: "+e.message)}
  finally{A.busy=false;refresh()}
@@ -191,7 +191,7 @@ async function restoreISO(){
  finally{A.busy=false;refresh()}
 }
 async function applyDirectorStep(){
- if(A.busy||!A.connected||!A.directorOn||!A.shots.length||A.directorNeedsFrame){
+ if(A.busy||!A.connected||!A.directorOn||!A.shots.length||A.directorNeedsFrame||A.recoveryPending){
   message("Enable Cinematic Director and capture a fresh camera frame before applying a change.");return;
  }
  if(!$("acDirectorStepConsent")?.checked){message("Authorize this single Director step before changing the camera.");return}
@@ -275,7 +275,7 @@ async function applyExposureStep(field,direction,undo=false){
     A.undoExposure=null;
     message("Previous "+(field==="tv"?"shutter":"aperture")+" restored: "+lib.display(field,plan.to)+".");
   }else{
-    A.undoExposure={field,from:plan.from,to:plan.to,direction};
+    A.undoExposure={field,from:plan.from,to:plan.to,direction};A.directorNeedsFrame=true;
     message("Camera confirmed "+lib.display(field,plan.from)+" → "+lib.display(field,plan.to)+" ("+(plan.deltaEV>0?"+":"")+plan.deltaEV+" EV). Undo is available.");
   }
  }catch(e){
@@ -295,6 +295,7 @@ async function checkCard(){
  finally{A.busy=false;refresh()}
 }
 async function latestPhoto(){
+ A.directorNeedsFrame=true;
  try{
   A.busy=true;message("Downloading preview of latest photo…");
   const r=await native("latestPreview");await addCameraShot(r);
