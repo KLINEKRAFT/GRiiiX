@@ -32,3 +32,9 @@ See [ADAPTIVE.md](./ADAPTIVE.md) for diagnostics, safe camera capture recovery, 
 The Shoot screen now includes an optional **Photography Director** with an initial **Cinematic** strategy. It treats deep shadows as intentional, protects clipped highlights, and suggests restrained exposure changes. With your explicit consent, it can set ISO on the physical GR IIIx via Scriptable, subject to independent camera-side M-mode, fixed-ISO, exposure-state and ISO-step guards. A separately authorized **Director pass** can capture at most two frames with at most one verified intermediate ISO change.
 
 Cinematic is a preview-based heuristic, not true AI scene recognition; it does **not** change shutter speed, aperture, film simulations, or RAW development. Read [DIRECTOR.md](./DIRECTOR.md) for exact setup, safety limits, and [repeatable tests](./tests/director.test.js). The new Director mode has not been tested on the user's camera yet.
+
+## Exposure Studio — shutter and aperture
+
+Under **Shoot → Advanced controls → Exposure Studio**, the app now provides cautious **one-step shutter and aperture changes on the camera**. Each action requires explicit authorization, a camera-reported supported value, M mode with fixed ISO, no stale settings, and successful read-back. An Undo control reverses the last confirmed step when still safe. No automatic shutter or aperture writes are enabled.
+
+See [EXPOSURE.md](./EXPOSURE.md) for the actual control limits, update steps, and physical-camera testing instructions. This new write path has passed simulations but has not yet been verified on the user's GR IIIx.
