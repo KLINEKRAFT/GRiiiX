@@ -169,7 +169,7 @@ try {
   // Queue-based bridge: Scriptable processes camera requests outside WebKit.
   await view.evaluateJavaScript(
     "(function(){window.__kkJobs=[];window.__kkPending={};window.__kkSerial=0;" +
-    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;window.__kkPending[id]=resolve;window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
+    "window.KKNative={request:function(op,payload){return new Promise(function(resolve){var id=++window.__kkSerial;var wait=op==='capturePreview'?75000:op==='latestPreview'?45000:30000;var timer=setTimeout(function(){if(window.__kkPending[id]){delete window.__kkPending[id];resolve({error:'Scriptable bridge timed out during '+op+'. Open the script again or check camera Wi-Fi.'})}},wait);window.__kkPending[id]=function(result){clearTimeout(timer);resolve(result)};window.__kkJobs.push({id:id,op:op,payload:payload||{}});})}};" +
     "window.__kkReceive=function(x){var fn=window.__kkPending[x.id];if(fn){delete window.__kkPending[x.id];fn(x.result)}};return true})()",
     false
   );
