@@ -242,7 +242,7 @@ async function setVerifiedISO(payload) {
   if(cinematic){
     if(!/^(m|manual)$/i.test(current.exposureMode))
       throw Error("Cinematic ISO write blocked: camera must be in M exposure mode.");
-    if(!/^\\d+$/.test(current.iso))
+    if(!/^[0-9]+$/.test(current.iso))
       throw Error("Cinematic ISO write blocked: fixed manual ISO required.");
     if(payload.expectedShutter!==undefined && String(payload.expectedShutter)!==current.shutter)
       throw Error("Cinematic shutter setting changed since analysis. Refresh camera settings.");
