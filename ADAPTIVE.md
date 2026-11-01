@@ -1,51 +1,49 @@
-# Adaptive Capture — Ricoh GR IIIx iPhone companion
+# Klinekraft GR — Studio Edition
 
-## Status (October 31, 2026)
+The Ricoh GR IIIx iPhone companion runs without Xcode using **Scriptable** and the camera's local Wi-Fi. The app has four principal sections: **Shoot, Looks, Library, More**. Additional GPS, timers, and statistics are found under More.
 
-The user has confirmed that the iPhone Scriptable bridge works, and that photo retrieval/analysis works with the camera. New **camera ISO writing** is implemented from the published Ricoh wireless protocol but is **not yet tested on this physical camera**.
+## What's new
 
-- `adaptive.js`: image analysis, local before/after comparisons, manual **Apply suggested ISO**, **Undo ISO change**, and a bounded **Auto Correct** loop.
-- `Scriptable-GR-Bridge.js`: camera read/write bridge using native Scriptable `Request`. Supports `getSettings`, and `setISO` with expected-current-value checks, camera-advertised supported ISO options, a max-ISO limit, form-encoded PUT, and a fresh GET read-back. No arbitrary remote paths or setting keys are accepted from the app.
-- The *first* confirmed camera ISO change via Apply suggestion unlocks Auto Correct for that session. A same-value/no-op write does **not** unlock it. Any mismatch or failed write stops automation.
-- `GR-Camera-Diagnostic.js`: independent read-only camera test.
-- Vercel-hosted Chrome/Safari provides local photo analysis. Actual camera control requires opening the downloaded HTML inside Scriptable, **not** a hosted web page.
-- No Xcode required. The camera's firmware is not modified.
+- A photograph-first **Shoot** workspace with a large preview, one clear capture action, creative subject/rendering selections and a restrained exposure recommendation.
+- **Apply to camera** adjusts ISO when supported by the GR IIIx and reads the actual camera value back. **Undo** restores the previous value. No success is claimed without verification.
+- **Advanced controls** contains read-only camera diagnostics, manual ISO limit, automated capture consent, logs, and frame comparison.
+- A warm light theme and optional low-glare dark theme (More → Appearance).
+- Film looks and local photo library use quiet editorial layouts rather than a dense card dashboard.
+- **Safer camera timeouts:** the bridge records a pending shutter request before sending the shutter command. If an HTTP call times out, it does **not** resend the shutter. The next action is **Recover last frame**. Recovery only performs GET requests and does not take another photo. Pending state is saved in Scriptable's local folder across restarts.
+- Camera previews try a medium `?size=view` image, then fall back to smaller `?size=thumb` if necessary.
+- App updates are staged before writing to Scriptable storage; an interrupted GitHub download leaves the previous complete version intact.
 
-## Install the updated app on iPhone
+## How to install the update on iPhone
 
-1. Connect the iPhone to regular internet (not the camera Wi-Fi).
-2. Open [Scriptable-GR-Bridge.js](https://github.com/KLINEKRAFT/GRiiiX/blob/main/Scriptable-GR-Bridge.js) and **replace the entire code** of your existing Scriptable script. Run it once to refresh the local UI; the startup alert confirms it launched.
-3. Enable Wi-Fi on the Ricoh and join its camera Wi-Fi network in iPhone Settings. The phone may say *No Internet Connection*; stay on that network.
-4. Close the current Scriptable app window if it is open, return to Scriptable and run the updated script. It loads the already cached app without internet.
-5. On the camera, select **M (manual exposure)** and a **fixed ISO** such as 1600. This avoids the camera compensating for ISO changes with a different shutter speed; the first test does not operate with Auto ISO.
-6. In **Adaptive**, tap **1 · Connect**, then **Refresh camera ISO** and **3 · Review latest photo** or **4 · Shoot & analyze**.
-7. Set your Scene and Look. Under **Apply an adjustment**, check the consent box, then tap **Apply suggested ISO**.
-8. Watch **Latest status / Session activity**. A successful change reports the **actual before/after ISO read from the camera**. If the camera reports unchanged values, missing options, or an error, the app does not claim success. Tap **Undo ISO change** to return to the previous value after a successful change.
-9. After the first verified ISO write, **Auto Correct** becomes available. Check its separate consent box to authorize up to three shots, with setting changes and read-back between frames. This mode enforces **manual exposure M** and fixed ISO.
+1. Connect the iPhone to regular internet. In your original Scriptable script, replace all code with the latest [Scriptable-GR-Bridge.js](./Scriptable-GR-Bridge.js). Run it once and tap OK on the startup alert. It downloads the app interface and styles.
+2. On the Ricoh, turn on Wi-Fi and use a fixed ISO in M mode for exposure-control testing. Join the Ricoh Wi-Fi in iPhone Settings. The **No Internet Connection** warning is normal.
+3. Return to Scriptable and run the script; it uses the local cached interface when Github isn't reachable over the camera network.
+4. Open **Shoot**. Tap **Connect camera**. Tap the shutter circle to take a photograph and analyze its JPEG preview.
+5. If the app reports a pending shot, tap **Recover last frame**. This **does not** fire the shutter again. Use **Advanced controls → Discard pending marker** only when you're sure the previous shot no longer needs recovering.
+6. Select the subject and desired rendering, review the suggested ISO, check the consent box and tap **Apply to camera**. The app reads the camera back to verify it. Undo is available for a previous setting change.
+7. Under **Advanced controls**, **Auto Correct** becomes available after a verified ISO adjustment. It requires manual exposure mode (M), fixed ISO, and separate consent. It captures at most three frames and stops if read-back or retrieval fails.
 
-## Operation and safety notes
+## Limitations and safety
 
-- The first write is *not* a simulation: it changes your physical camera's ISO when allowed by firmware and exposure mode. Test on a noncritical subject.
-- Current ISO and permitted values are read live with GET `/v1/params/camera` (falling back to GET `/v1/props`); ISO uses `sv`.
-- PUT `/v1/params/camera` sends only `sv=<camera-valid-value>` as `application/x-www-form-urlencoded`; each write is independently verified by reading `sv` again. We reject stale expected values and never attempt a write when the available ISO list is empty.
-- If the preview looks too dark, the heuristic raises ISO, constrained by the selected upper limit. If highlights are clipped, it may lower ISO. The nearest ISO value allowed by the camera is selected, not an arbitrary integer.
-- These heuristics do **not** accurately detect subject priority, motion blur or defocus. A cinematic dark photograph may be intentional. Review results rather than trusting brightness alone.
-- Current camera mode may affect whether ISO adjustments alter actual exposure, even if the setting was applied; Auto Correct therefore requires M.
-- Scriptable/iPhone network interruptions may leave the camera at its last confirmed ISO. Use **Refresh camera ISO** to reconcile the display; Undo is available if a previous value was recorded in the same session.
-- Each Auto Correct run is capped at three captures; the Stop control takes effect between ongoing requests. Camera originals are never deleted.
-- Do not commit camera SSID, Wi-Fi key, complete `/v1/props`, serial number, or personal photos to this public GitHub repository.
+- The user has confirmed successful Scriptable app launch, camera photo review/analysis, and intermittent camera control. The newly implemented timeout recovery and redesigned UI still require physical-camera validation.
+- Chrome/Safari on a Vercel-hosted HTTPS site cannot reliably send commands to the camera's plain HTTP API; the Scriptable iPhone bridge remains necessary for shooting and ISO changes.
+- The scene analysis uses locally calculated JPEG brightness statistics, not scene-aware AI. It can misjudge silhouettes and intentionally dark photographs. "Edge detail" is not reliable motion or focus detection.
+- An ISO change can be offset by automatic shutter/aperture adjustments in non-manual modes. Use M and fixed ISO for controlled testing.
+- Unstable camera Wi-Fi may delay saving or downloading a frame. Pending recovery prevents accidental double shutter presses. If a preview remains pending, the original may still exist on the camera's SD card.
+- Camera originals are never deleted. Browser imported images/recipes can be lost if iOS clears web data. Keep original photographs backed up.
+- No cloud upload of image analysis. GPS walks can be interrupted when the app is in the background.
+- The Scriptable bridge has a limited allow-list of camera commands and does not modify firmware.
+- Avoid publishing raw camera network credentials, serial numbers, or personal photos to this public repository.
 
-## Known limitations and future work
+## Technical details
 
-- ISO control on the actual physical GR IIIx and firmware still needs an end-to-end test. A successful preview does **not** prove setting writes work.
-- No shutter speed (`tv`), aperture (`av`), exposure compensation (`xv`), or film-effect (`effect`) writes yet. These should be implemented only after live-mode-specific availability and read-back tests.
-- The auto-engine evaluates a low-res JPEG preview, not full RAW/scene-aware AI.
-- No guaranteed background control or camera reconnect; keep Scriptable open and the iPhone on the camera's Wi-Fi.
-- Local photo analysis and imported photo storage still lack complete EXIF understanding.
+Relevant routes: GET `/v1/ping`, GET `/v1/props`, GET `/v1/photos`, GET `/v1/photos/{folder}/{filename}?size=view|thumb`, POST `/v1/camera/shoot`, and PUT `/v1/params/camera` with form-encoded ISO `sv`. ISO write requests validate camera-reported supported values, verify the current value before writing, and read back the final value. No arbitrary API endpoints are exposed to the UI.
 
-## Protocol references
+The code is organized in `index.html` (existing app and data), `adaptive.js` (Shoot, Looks, Library and More UI, analysis), `adaptive.css` (legacy compatibility), `studio.css` (editorial visual design), `Scriptable-GR-Bridge.js` (camera/network host) and `sw.js` (offline web shell).
 
-- [Reverse-engineered Ricoh wireless specification](https://github.com/CursedHardware/ricoh-wireless-protocol)
-- [GR III capture parameter enumerations](https://github.com/CursedHardware/ricoh-wireless-protocol/blob/main/definitions/capture_ricoh_gr_iii.yaml)
-- [Scriptable Request API](https://docs.scriptable.app/request/)
-- [Community implementation research](https://github.com/Nielk74/ricoh-gr3-android)
+## Next development priorities
+
+1. Test slow SD cards, camera save latency, camera disconnects, and recovery behavior on real hardware.
+2. Extract EXIF metadata from the camera's photo info endpoint to improve shooting recommendations, especially in bright daylight.
+3. After independent mode-specific validation, add shutter/aperture controls with reversible writes.
+4. Improve optional live view and focus controls using the same safe camera transport.
