@@ -199,3 +199,18 @@ html[data-theme="dark"] .ac-photo{background:#090b0a}
 .exposure-choice small{font-size:11px;color:var(--muted);line-height:1.35;overflow-wrap:anywhere}
 .exposure-choice:disabled{opacity:.4}
 @media(max-width:390px){.exposure-controls{gap:6px}.exposure-choice{padding:10px}.exposure-readouts strong{font-size:18px}}
+
+
+/* Photography Director v2 · One deliberate exposure move */
+.director-next{margin:16px 0 4px;border-top:1px solid var(--line);padding:19px 0 2px}
+.director-next h3{font-size:21px;line-height:1.16;letter-spacing:-.045em;margin:7px 0 9px;font-weight:670}
+.director-next p{font-size:12px;line-height:1.65;color:var(--muted);margin:11px 0 0;max-width:600px}
+.director-next-head{display:flex;align-items:flex-end;justify-content:space-between;gap:15px}
+.director-next-ev{font-size:12px;font-weight:750;color:var(--accent);white-space:nowrap;margin-bottom:7px}
+.director-next-values{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:16px 18px;margin-top:16px;display:flex;align-items:center;gap:20px}
+.director-next-values span,.director-next-values strong{font-size:23px;letter-spacing:-.06em;color:var(--ink);font-weight:610}
+.director-next-values strong{font-weight:780}
+.director-next-values b{font-size:16px;color:var(--muted);font-weight:400}
+.director-next .director-next-foot{font-size:10px;line-height:1.65;margin:8px 0 10px}
+.director-next>.shoot-primary{margin-top:1px}
+@media(max-width:390px){.director-next-values{padding:13px}.director-next-values span,.director-next-values strong{font-size:20px}}
