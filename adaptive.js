@@ -1,7 +1,7 @@
 /* Adaptive Capture: browser-local image review + optional Scriptable camera bridge */
 (function(){
 "use strict";
-const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false,directorOn:false,undoExposure:null,directorTested:{tv:false,av:false}};
+const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false,directorOn:false,undoExposure:null,directorTested:{tv:false,av:false},directorNeedsFrame:true};
 const $=id=>document.getElementById(id);
 const safe=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
@@ -109,7 +109,7 @@ function view(){
  '<div class="shoot-section-title">THE INTENTION</div><div class="shoot-selectors"><label>Subject<select id="acScene">'+sceneOptions+'</select></label>'+(director?'<div class="director-rendering"><span>RENDERING</span><strong>Cinematic / low key</strong></div>':'<label>Rendering<select id="acIntent">'+intentOptions+'</select></label>')+'</div>'+
  (shot?'<div class="shoot-result"><div class="shoot-result-top"><div><span class="shoot-section-title">FRAME ASSESSMENT</span><h2>'+(director?safe(suggestion.label):(suggestion.ready?'On target.':suggestion.ev>0?'Needs more light.':'Protect the highlights.'))+'</h2></div><div class="shoot-ev">'+(suggestion.ev>0?'+':'')+suggestion.ev.toFixed(1)+' EV</div></div>'+
  '<p class="shoot-assessment">'+safe(suggestion.text)+'</p>'+
-(director?directorMoveCard(coordinated,active):
+(director?(A.directorNeedsFrame?'<div class="director-next"><span class="shoot-section-title">DIRECTOR / NEXT FRAME</span><h3>Capture a fresh frame.</h3><p>After a setting change, Director needs a new camera photograph before another exposure adjustment. Imported or previously saved photos can still be reviewed without changing the camera.</p></div>':directorMoveCard(coordinated,active)):
  '<div class="shoot-iso-trace"><div><span>CAMERA ISO</span><strong>'+safe(A.settings?.iso||A.iso)+'</strong></div><div class="shoot-iso-arrow">→</div><div><span>RECOMMENDED</span><strong>'+suggestion.iso+'</strong></div><div class="shoot-iso-note">ISO ONLY</div></div>'+
  '<label class="shoot-consent"><input id="acApplyConsent" type="checkbox"><span>Allow this ISO change on my camera</span></label>'+
  '<div class="shoot-result-actions"><button class="shoot-primary" data-ac="apply" '+(!canApply?'disabled':'')+'>Apply ISO</button><button class="shoot-tertiary" data-ac="restore" '+(!active||!A.undoISO||A.busy?'disabled':'')+'>Undo</button></div>')+
@@ -139,7 +139,7 @@ async function readSettings() {
 }
 async function connect(){
  try{
-  A.busy=true;A.verified=false;A.undoISO=null;
+  A.busy=true;A.verified=false;A.undoISO=null;A.directorNeedsFrame=true;
   message("Checking camera Wi-Fi and exposure settings…");
   await native("ping");await native("props");A.connected=true;
   try { const settings=await readSettings();
@@ -191,8 +191,8 @@ async function restoreISO(){
  finally{A.busy=false;refresh()}
 }
 async function applyDirectorStep(){
- if(A.busy||!A.connected||!A.directorOn||!A.shots.length){
-  message("Connect, enable Cinematic Director and analyze a frame first.");return;
+ if(A.busy||!A.connected||!A.directorOn||!A.shots.length||A.directorNeedsFrame){
+  message("Enable Cinematic Director and capture a fresh camera frame before applying a change.");return;
  }
  if(!$("acDirectorStepConsent")?.checked){message("Authorize this single Director step before changing the camera.");return}
  let sent=false,kind="";
@@ -231,6 +231,7 @@ async function applyDirectorStep(){
   if(String(confirmed[key])!==next.to||
      keys.some(k=>k!==key&&String(confirmed[k]||"")!==String(live[k]||"")))
     throw Error("Camera exposure read-back differs from the approved plan.");
+  A.directorNeedsFrame=true;
   if(kind==="iso"){
     A.undoISO=live.iso;A.verified=true;
   }else{
@@ -240,7 +241,7 @@ async function applyDirectorStep(){
   }
   message("Director confirmed "+next.label+": "+next.from+" → "+next.to+". Review the next frame before applying more changes.");
  }catch(e){
-   if(sent){A.verified=false;if(kind==="tv"||kind==="av")A.undoExposure=null}
+   if(sent){A.directorNeedsFrame=true;A.verified=false;if(kind==="tv"||kind==="av")A.undoExposure=null}
    message("Director stopped: "+e.message+(sent?" Inspect the camera display; do not repeat an uncertain write.":""));
  }finally{A.busy=false;refresh()}
 }
@@ -313,7 +314,7 @@ async function addCameraShot(r){
 async function capture(){
  try{A.busy=true;message("Capturing a frame and waiting for the preview…");const r=await native("capturePreview");
  if(r.pending){A.recoveryPending=true;message(r.message||"Photo pending. Use Recover shot.");return}
- await addCameraShot(r);A.recoveryPending=false;
+ await addCameraShot(r);A.recoveryPending=false;A.directorNeedsFrame=false;
  message("Frame received and analyzed. Original preserved on camera.")
  }catch(e){message("Test capture stopped: "+e.message)}finally{A.busy=false;refresh()}
 }
@@ -324,7 +325,7 @@ async function recover(){
  const result=await native("recoverCapture");
  if(result.pending){A.recoveryPending=true;message(result.message||"Photo is still being saved.");return}
  if(!result.base64)throw Error(result.message||"No previous capture to recover.");
- await addCameraShot(result);A.recoveryPending=false;
+ await addCameraShot(result);A.recoveryPending=false;A.directorNeedsFrame=false;
  message("Recovered and analyzed the photo. No additional shutter press.");
  }catch(e){message("Recovery failed: "+e.message)}
  finally{A.busy=false;refresh()}
@@ -376,7 +377,7 @@ async function auto(directorPass=false){
  }catch(e){A.verified=false;message("Auto Correct stopped: "+e.message)}
  finally{A.busy=false;A.stop=false;refresh()}
 }
-document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="directorStep")await applyDirectorStep();if(op==="exposure")await applyExposureStep(x.dataset.exfield,x.dataset.exdirection);if(op==="undoExposure")await undoExposureChange();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
+document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="directorStep")await applyDirectorStep();if(op==="exposure")await applyExposureStep(x.dataset.exfield,x.dataset.exdirection);if(op==="undoExposure")await undoExposureChange();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.directorNeedsFrame=true;A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
 document.addEventListener("change",e=>{let x=e.target;if(x.id==="acPhotos"){addFiles([...x.files]);x.value=""}
 if(x.id==="acScene"){A.scene=x.value;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
 if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.id==="acMax"){A.max=clamp(Number(x.value)||12800,100,102400);refresh()}});
