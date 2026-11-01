@@ -1,7 +1,7 @@
 /* Adaptive Capture: browser-local image review + optional Scriptable camera bridge */
 (function(){
 "use strict";
-const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false,directorOn:false,undoExposure:null};
+const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false,directorOn:false,undoExposure:null,directorTested:{tv:false,av:false}};
 const $=id=>document.getElementById(id);
 const safe=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
@@ -69,11 +69,24 @@ function exposureControls(active){
  '<div class="shoot-tool-actions"><button data-ac="undoExposure" '+(!active||!A.undoExposure||A.busy?'disabled':'')+'>Undo last exposure step</button></div>'+
  '<p class="shoot-small">No automatic shutter or aperture changes yet. Moving subjects require a safe shutter speed, and every step is limited to 0.6 EV.</p>';
 }
+function directorMoveCard(move,active){
+ if(!move)return '<div class="director-next"><span class="shoot-section-title">NEXT EXPOSURE MOVE</span><p>Connect the camera and take a test photo to see a safe, scene-aware adjustment.</p></div>';
+ if(!move.ok)return '<div class="director-next"><span class="shoot-section-title">NEXT EXPOSURE MOVE</span><h3>Hold this frame.</h3><p>'+safe(move.explanation)+'</p></div>';
+ const lib=window.KKExposure;
+ const label=move.field==="iso"?x=>"ISO "+safe(x):x=>safe(lib.display(move.field,x));
+ return '<div class="director-next"><div class="director-next-head"><div><span class="shoot-section-title">NEXT EXPOSURE MOVE</span><h3>'+safe(move.label)+'</h3></div><span class="director-next-ev">'+(move.deltaEV>0?"+":"")+move.deltaEV.toFixed(2)+' EV</span></div>'+
+ '<div class="director-next-values"><span>'+label(move.from)+'</span><b>→</b><strong>'+label(move.to)+'</strong></div>'+
+ '<p>'+safe(move.detail)+'</p><p class="director-next-foot">One camera-supported '+(move.field==="iso"?"ISO":move.field==="tv"?"shutter":"aperture")+' step, with live read-back. No automatic second adjustment.</p>'+
+ '<label class="shoot-consent"><input type="checkbox" id="acDirectorStepConsent"><span>Authorize this one change on my Ricoh</span></label>'+
+ '<button class="shoot-primary" data-ac="directorStep" '+(!active||A.busy?'disabled':'')+'>Apply Director step</button></div>';
+}
 function view(){
  const shot=A.shots[A.shots.length-1];
  const active=A.connected&&!!bridge();
  const suggestion=shot?suggest(shot.data,A.settings?.iso||A.iso):null;
  const director=A.directorOn;
+ const coordinated=director&&shot&&A.settings&&window.KKDirector?.coordinate?
+   window.KKDirector.coordinate(shot.data,A.settings,A.scene,{maxISO:A.max}):null;
  const canApply=active&&!!A.settings&&!!shot&&!A.busy&&suggestion&&Math.abs(suggestion.ev)>=.3;
  const sceneOptions=Object.entries(sceneNames).map(([key,name])=>'<option value="'+key+'" '+(A.scene===key?'selected':'')+'>'+safe(name)+'</option>').join('');
  const intentOptions=[["moody","Atmospheric"],["balanced","Natural"],["bright","Bright"]]
@@ -96,9 +109,10 @@ function view(){
  '<div class="shoot-section-title">THE INTENTION</div><div class="shoot-selectors"><label>Subject<select id="acScene">'+sceneOptions+'</select></label>'+(director?'<div class="director-rendering"><span>RENDERING</span><strong>Cinematic / low key</strong></div>':'<label>Rendering<select id="acIntent">'+intentOptions+'</select></label>')+'</div>'+
  (shot?'<div class="shoot-result"><div class="shoot-result-top"><div><span class="shoot-section-title">FRAME ASSESSMENT</span><h2>'+(director?safe(suggestion.label):(suggestion.ready?'On target.':suggestion.ev>0?'Needs more light.':'Protect the highlights.'))+'</h2></div><div class="shoot-ev">'+(suggestion.ev>0?'+':'')+suggestion.ev.toFixed(1)+' EV</div></div>'+
  '<p class="shoot-assessment">'+safe(suggestion.text)+'</p>'+
- '<div class="shoot-iso-trace"><div><span>CAMERA ISO</span><strong>'+safe(A.settings?.iso||A.iso)+'</strong></div><div class="shoot-iso-arrow">→</div><div><span>RECOMMENDED</span><strong>'+suggestion.iso+'</strong></div><div class="shoot-iso-note">'+(director?'M MODE / ISO ONLY':'ISO ONLY')+'</div></div>'+
+(director?directorMoveCard(coordinated,active):
+ '<div class="shoot-iso-trace"><div><span>CAMERA ISO</span><strong>'+safe(A.settings?.iso||A.iso)+'</strong></div><div class="shoot-iso-arrow">→</div><div><span>RECOMMENDED</span><strong>'+suggestion.iso+'</strong></div><div class="shoot-iso-note">ISO ONLY</div></div>'+
  '<label class="shoot-consent"><input id="acApplyConsent" type="checkbox"><span>Allow this ISO change on my camera</span></label>'+
- '<div class="shoot-result-actions"><button class="shoot-primary" data-ac="apply" '+(!canApply?'disabled':'')+'>'+(director?'Apply Director ISO':'Apply to camera')+'</button><button class="shoot-tertiary" data-ac="restore" '+(!active||!A.undoISO||A.busy?'disabled':'')+'>Undo</button></div>'+
+ '<div class="shoot-result-actions"><button class="shoot-primary" data-ac="apply" '+(!canApply?'disabled':'')+'>Apply ISO</button><button class="shoot-tertiary" data-ac="restore" '+(!active||!A.undoISO||A.busy?'disabled':'')+'>Undo</button></div>')+
  '</div>':
  '<div class="shoot-first-frame"><div class="shoot-section-title">THE FIRST FRAME</div><p>Capture or import a photograph. We’ll analyze exposure and suggest the next move.</p></div>')+
  '<details class="shoot-advanced" data-grdetails '+(A.detailsOpen?'open':'')+'><summary><span>Advanced controls</span><span>Camera tools & diagnostics</span></summary><div class="shoot-advanced-body">'+
@@ -175,6 +189,60 @@ async function restoreISO(){
   }else throw Error("Camera did not verify restore");
  }catch(e){message("Restore failed: "+e.message)}
  finally{A.busy=false;refresh()}
+}
+async function applyDirectorStep(){
+ if(A.busy||!A.connected||!A.directorOn||!A.shots.length){
+  message("Connect, enable Cinematic Director and analyze a frame first.");return;
+ }
+ if(!$("acDirectorStepConsent")?.checked){message("Authorize this single Director step before changing the camera.");return}
+ let sent=false,kind="";
+ try{
+  A.busy=true;
+  const photographed=A.settings;
+  if(!photographed)throw Error("Read the camera settings first.");
+  message("Rechecking the camera before the Director adjustment…");
+  const live=await readSettings();
+  const keys=["iso","shutter","aperture","exposureMode"];
+  if(keys.some(k=>String(photographed[k]||"")!==String(live[k]||"")))
+    throw Error("Camera settings changed since the plan was displayed. Review the new proposal.");
+  const oldPlan=window.KKDirector.coordinate(A.shots[A.shots.length-1].data,photographed,A.scene,{maxISO:A.max});
+  const next=window.KKDirector.coordinate(A.shots[A.shots.length-1].data,live,A.scene,{maxISO:A.max});
+  if(!oldPlan.ok||!next.ok||oldPlan.field!==next.field||oldPlan.to!==next.to||oldPlan.from!==next.from)
+    throw Error("Director proposal changed. Review the camera state and try again.");
+  kind=next.field;
+  const snapshot={iso:live.iso,shutter:live.shutter,aperture:live.aperture,exposureMode:live.exposureMode};
+  let result;
+  sent=true;
+  if(kind==="iso"){
+    result=await native("setISO",{
+      iso:Number(next.to),expected:live.iso,maxISO:Math.min(A.max,6400),
+      policy:"cinematic",expectedShutter:live.shutter,expectedAperture:live.aperture
+    });
+  }else{
+    // Explicitly authorized *one-step* command; device validates the option and
+    // pre/post exposure snapshots independently, and never retries a timed-out PUT.
+    result=await native("setExposureStep",{
+      field:kind,direction:next.direction,scene:A.scene,expected:snapshot
+    });
+  }
+  if(result.verified!==true||String(result.after)!==next.to)
+    throw Error("Camera did not confirm the exact planned setting.");
+  const confirmed=await readSettings(), key=kind==="iso"?"iso":kind==="tv"?"shutter":"aperture";
+  if(String(confirmed[key])!==next.to||
+     keys.some(k=>k!==key&&String(confirmed[k]||"")!==String(live[k]||"")))
+    throw Error("Camera exposure read-back differs from the approved plan.");
+  if(kind==="iso"){
+    A.undoISO=live.iso;A.verified=true;
+  }else{
+    A.undoExposure={field:kind,from:next.from,to:next.to,direction:next.direction};
+    // Session-only: a successful read-back is not persistent firmware certification.
+    A.directorTested[kind]=true;
+  }
+  message("Director confirmed "+next.label+": "+next.from+" → "+next.to+". Review the next frame before applying more changes.");
+ }catch(e){
+   if(sent){A.verified=false;if(kind==="tv"||kind==="av")A.undoExposure=null}
+   message("Director stopped: "+e.message+(sent?" Inspect the camera display; do not repeat an uncertain write.":""));
+ }finally{A.busy=false;refresh()}
 }
 async function applyExposureStep(field,direction,undo=false){
  if(A.busy||!A.connected){message("Connect to your Ricoh before changing exposure.");return}
@@ -308,7 +376,7 @@ async function auto(directorPass=false){
  }catch(e){A.verified=false;message("Auto Correct stopped: "+e.message)}
  finally{A.busy=false;A.stop=false;refresh()}
 }
-document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="exposure")await applyExposureStep(x.dataset.exfield,x.dataset.exdirection);if(op==="undoExposure")await undoExposureChange();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
+document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="directorStep")await applyDirectorStep();if(op==="exposure")await applyExposureStep(x.dataset.exfield,x.dataset.exdirection);if(op==="undoExposure")await undoExposureChange();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
 document.addEventListener("change",e=>{let x=e.target;if(x.id==="acPhotos"){addFiles([...x.files]);x.value=""}
 if(x.id==="acScene"){A.scene=x.value;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
 if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.id==="acMax"){A.max=clamp(Number(x.value)||12800,100,102400);refresh()}});
