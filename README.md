@@ -26,3 +26,9 @@ The camera's Wi-Fi need not provide internet access. The bridge caches the UI lo
 **Browser limits:** The hosted Vercel PWA is useful for offline photo imports, recipes and guidance, but secure iPhone browsers generally cannot directly send commands to the camera's local HTTP API. Remote shooting and ISO control require Scriptable. No Xcode is required for this workflow. A confirmed live Vercel deployment has not been established.
 
 See [ADAPTIVE.md](./ADAPTIVE.md) for diagnostics, safe camera capture recovery, the firmware testing plan and known limitations.
+
+## Photography Director: Cinematic
+
+The Shoot screen now includes an optional **Photography Director** with an initial **Cinematic** strategy. It treats deep shadows as intentional, protects clipped highlights, and suggests restrained exposure changes. With your explicit consent, it can set ISO on the physical GR IIIx via Scriptable, subject to independent camera-side M-mode, fixed-ISO, exposure-state and ISO-step guards. A separately authorized **Director pass** can capture at most two frames with at most one verified intermediate ISO change.
+
+Cinematic is a preview-based heuristic, not true AI scene recognition; it does **not** change shutter speed, aperture, film simulations, or RAW development. Read [DIRECTOR.md](./DIRECTOR.md) for exact setup, safety limits, and [repeatable tests](./tests/director.test.js). The new Director mode has not been tested on the user's camera yet.
