@@ -1,7 +1,7 @@
 /* Adaptive Capture: browser-local image review + optional Scriptable camera bridge */
 (function(){
 "use strict";
-const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null};
+const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null};
 const $=id=>document.getElementById(id);
 const safe=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
@@ -48,14 +48,79 @@ function view(){
  return heading("Adaptive Capture.","Review each frame. Improve your exposure. Keep the atmosphere.")+
  '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">CAMERA LINK</div><h2>GR IIIx</h2></div><span class="ac-pill '+(active?"good":"")+'">'+(active?"Connected":"Not connected")+'</span></div><p class="ac-small">Run this interface in Scriptable to use the camera. Use the checks below in order to isolate any failure.</p><div class="ac-actions"><button class="ac-button light" data-ac="connect" '+(!bridge()||A.busy?"disabled":"")+'>1 · Connect</button><button class="ac-button light" data-ac="check" '+(!active||A.busy?"disabled":"")+'>2 · Check card</button><button class="ac-button light" data-ac="latest" '+(!active||A.busy?"disabled":"")+'>3 · Review latest photo</button><button class="ac-button" data-ac="capture" '+(!active||A.busy?"disabled":"")+'>4 · Shoot & analyze</button></div><div class="ac-blue" role="status" aria-live="polite"><b>Latest status</b><p>'+safe(A.log[0]||"Run 1 · Connect first.")+'</p></div></div>'+
  '<div class="ac-card"><div class="ac-label">CREATIVE TARGET</div><div class="ac-fields"><label>Scene<select id="acScene">'+Object.entries(sceneNames).map(([k,v])=>'<option '+(A.scene===k?"selected":"")+' value="'+k+'">'+v+'</option>').join("")+'</select></label><label>Look<select id="acIntent">'+[["moody","Moody / cinematic"],["balanced","Balanced"],["bright","Bright / clear"]].map(([k,v])=>'<option '+(A.intent===k?"selected":"")+' value="'+k+'">'+v+'</option>').join("")+'</select></label><label>Current ISO<input id="acIso" type="number" min="100" max="102400" value="'+A.iso+'"></label><label>ISO limit<input id="acMax" type="number" min="100" max="102400" value="'+A.max+'"></label></div><p class="ac-small">ISO is entered manually until the camera properties are parsed and confirmed.</p></div>'+
+ '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">LIVE CAMERA SETTINGS</div><h2>Apply an adjustment</h2></div><span class="ac-pill '+(A.settings?"good":"")+'">'+(A.settings?"Camera read":"Not read")+'</span></div>'+
+ '<div class="ac-metrics"><div><small>CAMERA ISO</small><strong>'+safe(A.settings?.iso||"—")+'</strong></div><div><small>MODE</small><strong>'+safe(A.settings?.exposureMode||"—")+'</strong></div><div><small>APERTURE</small><strong>'+safe(A.settings?.aperture||"—")+'</strong></div></div>'+
+ '<p class="ac-small">The adjustment is sent to the GR IIIx itself, then checked against the camera’s reported ISO. For the first test, use a fixed ISO rather than Auto ISO. In auto-exposure modes, the camera may compensate with another setting.</p>'+
+ '<div class="ac-actions"><button class="ac-button light" data-ac="settings" '+(!active||A.busy?"disabled":"")+'>Refresh camera ISO</button><button class="ac-button" data-ac="apply" '+(!active||!A.settings||!last||A.busy?"disabled":"")+'>Apply suggested ISO</button><button class="ac-button light" data-ac="restore" '+(!active||!A.undoISO||A.busy?"disabled":"")+'>Undo ISO change</button></div></div>'+
  '<div class="ac-card"><div class="ac-row"><div><div class="ac-label">PHOTO REVIEW</div><h2>Analyze a shot</h2></div><span class="ac-pill">'+A.shots.length+' photos</span></div><label class="ac-button ac-picker">Import photographs<input id="acPhotos" type="file" accept="image/*" multiple hidden></label> <button class="ac-button light" data-ac="clear" '+(!A.shots.length?"disabled":"")+'>Clear</button><p class="ac-small">Compatible JPEG / HEIC images are processed only on-device. RAW requires a rendered preview.</p></div>'+
  (last?result(last):'<div class="ac-card ac-empty">Import a photograph to see exposure, highlight, and shadow analysis.</div>')+
  (A.shots.length>=2?'<div class="ac-card"><div class="ac-label">BEFORE / AFTER</div><div class="ac-compare">'+A.shots.slice(-2).map((s,i)=>'<div><img src="'+safe(s.url)+'" alt="'+(i?"After":"Before")+'"><span class="ac-small">'+(i?"Latest":"Previous")+' · tone '+s.data.mid+'</span></div>').join("")+'</div></div>':"")+
- '<div class="ac-card"><div class="ac-label">AUTOMATED CAPTURE</div><h2>Auto Correct</h2><p class="ac-small">A bounded capture/analyze/adjust loop is included, but automatic ISO changes stay locked until the camera confirms a supported setting write and read-back on your firmware. It will never report a fake success.</p><label class="ac-check"><input type="checkbox" id="acConsent"> I authorize up to three captures and verified ISO changes once connected.</label><div class="ac-actions"><button class="ac-button" data-ac="auto" '+(!active||!A.verified||A.busy?"disabled":"")+'>Auto Correct</button><button class="ac-button light" data-ac="stop" '+(!A.busy?"disabled":"")+'>Stop</button></div><p class="ac-small">Status: '+(A.verified?"ISO writes verified":"Camera setting writes not verified")+'. Original files remain on the camera.</p></div>'+
+ '<div class="ac-card"><div class="ac-label">AUTOMATED CAPTURE</div><h2>Auto Correct</h2><p class="ac-small">After one successful ISO adjustment, Auto Correct can take up to three photos, review their brightness and update camera ISO between frames. Use manual exposure (M) with fixed ISO so shutter/aperture remain stable. Stop is checked between camera requests.</p><label class="ac-check"><input type="checkbox" id="acConsent"> I authorize up to three captures and verified ISO changes once connected.</label><div class="ac-actions"><button class="ac-button" data-ac="auto" '+(!active||!A.verified||A.busy?"disabled":"")+'>Auto Correct</button><button class="ac-button light" data-ac="stop" '+(!A.busy?"disabled":"")+'>Stop</button></div><p class="ac-small">Status: '+(A.verified?"ISO change and read-back verified":"Apply one suggested ISO first to unlock")+'. Original files remain on the camera.</p></div>'+
  '<div class="ac-card"><div class="ac-label">SESSION ACTIVITY</div><pre class="ac-log">'+safe(A.log.join("\n")||"No activity yet.")+'</pre></div>';
 }
 async function native(op,payload){if(!bridge())throw Error("Scriptable camera bridge is not active.");const response=await bridge().request(op,payload||{});if(!response||response.error)throw Error(response?.error||"No camera response");return response}
-async function connect(){try{A.busy=true;message("Checking camera ping…");const ping=await native("ping");const props=await native("props");A.camera=props;A.connected=true;message("Camera connection verified. Read-only control active.");return {ping,props}}catch(e){A.connected=false;message("Camera not connected: "+e.message)}finally{A.busy=false;refresh()}}
+async function readSettings() {
+ const settings=await native("getSettings");
+ A.settings=settings;
+ const value=Number(settings.iso);
+ if(Number.isInteger(value)&&value>=100){A.iso=value}
+ return settings;
+}
+async function connect(){
+ try{
+  A.busy=true;A.verified=false;A.undoISO=null;
+  message("Checking camera Wi-Fi and exposure settings…");
+  await native("ping");await native("props");A.connected=true;
+  try { const settings=await readSettings();
+    message("Connected. Camera ISO "+settings.iso+" · Mode "+settings.exposureMode+". Settings are ready for testing.");
+  }catch(e){message("Camera connected; exposure settings unavailable: "+e.message)}
+ }catch(e){A.connected=false;A.settings=null;message("Camera connection failed: "+e.message)}
+ finally{A.busy=false;refresh()}
+}
+async function refreshExposure(){
+ try{A.busy=true;const s=await readSettings();message("Camera confirms ISO "+s.iso+" · "+s.exposureMode+" mode. "+s.isoOptions.length+" available ISO values.")}
+ catch(e){message("Could not read camera settings: "+e.message)}
+ finally{A.busy=false;refresh()}
+}
+async function applySuggestion(){
+ if(!A.connected||!A.shots.length){message("Connect the camera and analyze a photograph first.");return}
+ if(A.busy)return;
+ try{
+  A.busy=true;message("Reading live ISO before making any adjustment…");
+  const current=await readSettings();
+  if(!/^\d+$/.test(current.iso))throw Error("Current camera ISO is "+current.iso+". Switch from Auto ISO to a fixed ISO on the camera for this first test.");
+  if(!current.isoOptions.length)throw Error("Camera did not report a writable ISO list.");
+  const suggested=guide(A.shots[A.shots.length-1].data);
+  if(Math.abs(suggested.ev)<.3){message("No ISO change needed for the selected look.");return}
+  const proposed=Math.min(A.max,suggested.iso);
+  if(!confirm("Change camera ISO from "+current.iso+" toward "+proposed+"?\nThis modifies the actual GR IIIx shooting setting.")){
+   message("Camera setting change cancelled.");return;
+  }
+  message("Sending ISO adjustment to your GR IIIx…");
+  const result=await native("setISO",{iso:proposed,expected:current.iso});
+  const checked=await readSettings();
+  if(result.verified!==true){
+   if(result.same){message("Camera was already set to "+checked.iso+". No change made.");return}
+   throw Error("Camera did not confirm a setting change");
+  }
+  if(checked.iso!==result.after)throw Error("Second read-back did not match the applied ISO");
+  A.undoISO=result.before;A.verified=true;
+  message("Camera confirmed ISO "+result.before+" → "+result.after+". You can undo this, or try Auto Correct in M mode.");
+ }catch(e){A.verified=false;message("ISO adjustment failed: "+e.message)}
+ finally{A.busy=false;refresh()}
+}
+async function restoreISO(){
+ if(!A.connected||!A.undoISO||A.busy)return;
+ try{
+  A.busy=true;const live=await readSettings();
+  if(!confirm("Restore previous camera ISO "+A.undoISO+"?"))return;
+  const result=await native("setISO",{iso:A.undoISO,expected:live.iso});
+  if(result.verified===true || result.same){
+    await readSettings();A.undoISO=null;message("Camera ISO restored to "+A.settings.iso+".");
+  }else throw Error("Camera did not verify restore");
+ }catch(e){message("Restore failed: "+e.message)}
+ finally{A.busy=false;refresh()}
+}
 async function checkCard(){
  try{A.busy=true;message("Checking camera SD card…");const r=await native("listPhotos");
   message("Card: "+r.count+" photos ("+r.jpegs+" JPEG, "+r.dngs+" DNG), "+r.folders+" folders. "+(r.latest?"Latest: "+r.latest:"No recent photo found."));
@@ -85,14 +150,42 @@ async function capture(){
  }catch(e){message("Test capture stopped: "+e.message)}finally{A.busy=false;refresh()}
 }
 async function auto(){
- if(!A.verified||!A.connected){message("Automatic camera adjustment is locked pending read-back verification.");return}
- if(!$("acConsent")?.checked){message("Please authorize the capture sequence first.");return}
- A.busy=true;A.stop=false;try{for(let i=0;i<A.maxShots&&!A.stop;i++){let r=await native("capturePreview");if(!r.base64||!r.mime)throw Error("Missing JPEG preview");
- let bytes=Uint8Array.from(atob(r.base64),c=>c.charCodeAt(0)),photo=new File([bytes],r.name||"GR-shot.jpg",{type:r.mime}),shot=await examine(photo);A.shots.push(shot);let p=guide(shot.data);message("Shot "+(i+1)+": "+p.text);if(p.ready)break;if(i+1>=A.maxShots)break;
- let result=await native("setISO",{iso:p.iso});if(result.verified!==true)throw Error("ISO read-back failed, stopping");A.iso=p.iso}
- }catch(e){message("Auto Correct stopped: "+e.message)}finally{A.busy=false;A.stop=false;refresh()}
+ if(A.busy||!A.verified||!A.connected){message("Apply one verified manual ISO change before using Auto Correct.");return}
+ if(!$("acConsent")?.checked){message("Check the camera-control consent box first.");return}
+ A.busy=true;A.stop=false;
+ try{
+  const initial=await readSettings();
+  if(!/^(m|manual)$/i.test(initial.exposureMode))
+    throw Error("Auto Correct needs manual exposure mode (M). Current camera mode is "+initial.exposureMode+".");
+  if(!/^\d+$/.test(initial.iso))
+    throw Error("Auto Correct requires fixed ISO. Camera reports "+initial.iso+".");
+  A.iso=Number(initial.iso);
+  let confirmed=initial.iso;
+  message("Starting Auto Correct (maximum "+A.maxShots+" captures).");
+  for(let i=0;i<A.maxShots&&!A.stop;i++){
+   const before=await readSettings();
+   if(before.iso!==confirmed)throw Error("Camera ISO changed externally. Stopping.");
+   if(!/^(m|manual)$/i.test(before.exposureMode))throw Error("Camera left M exposure mode. Stopping.");
+   const r=await native("capturePreview");
+   await addCameraShot(r);
+   const shot=A.shots[A.shots.length-1];
+   const proposed=guide(shot.data);
+   message("Frame "+(i+1)+": "+proposed.text);
+   if(proposed.ready || A.stop || i+1>=A.maxShots)break;
+   const oldISO=before.iso;
+   const write=await native("setISO",{iso:proposed.iso,expected:oldISO});
+   if(write.same){message("Camera ISO cannot improve further at the available setting.");break}
+   if(write.verified!==true)throw Error("Camera ISO adjustment wasn't verified. Stopping.");
+   const checked=await readSettings();
+   if(checked.iso!==write.after)throw Error("Camera ISO read-back changed. Stopping.");
+   A.undoISO=A.undoISO||initial.iso;A.iso=Number(write.after);confirmed=write.after;
+   message("Camera updated ISO "+oldISO+" → "+confirmed+".");
+  }
+  message(A.stop?"Auto Correct stopped. Last ISO "+confirmed+".":"Auto Correct finished. Last ISO "+confirmed+".");
+ }catch(e){A.verified=false;message("Auto Correct stopped: "+e.message)}
+ finally{A.busy=false;A.stop=false;refresh()}
 }
-document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="auto")await auto();if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
+document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="auto")await auto();if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
 document.addEventListener("change",e=>{let x=e.target;if(x.id==="acPhotos"){addFiles([...x.files]);x.value=""}
 if(x.id==="acScene"){A.scene=x.value;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
 if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.id==="acMax"){A.max=clamp(Number(x.value)||12800,100,102400);refresh()}});
