@@ -1,36 +1,28 @@
-# GRiiiX
+# Klinekraft GR
+An independent, local-first iPhone companion for the Ricoh GR IIIx.
 
-# Klinekraft GR — Web / PWA
+## Studio Edition
 
-This is a **static, local-first Progressive Web App** compatible with Vercel's static deployment. No Xcode, Node runtime, dependencies, or server/database required.
+The app opens to a dedicated **Shoot** screen with a large photo preview, one shutter button, exposure analysis and a clear **Apply to camera** ISO adjustment. Other sections: **Looks**, **Library**, and **More** (photo walks, studio utilities and insights). A low-glare dark theme is available under More.
 
-## Deployment
+**User-tested:** The Scriptable iPhone interface can connect to the Ricoh Wi-Fi, access a saved camera photo, and analyze it. The user reports intermittent capture timeouts. The current release adds an experimental recovery workflow that has passed simulated tests but still needs a physical-camera check.
 
-1. Publish the four files in this directory to a new static Vercel project, with `index.html` at the deployment root. The most convenient repeatable route is a GitHub repository connected to Vercel.
-2. On your iPhone, open the HTTPS deployment in Safari and choose **Share > Add to Home Screen**.
-3. Open it once while online to cache the PWA shell. Then you can use the recipes, stored photos, and shooting guide offline.
+**Camera writes:** ISO adjustment uses the camera's supported values and verifies the setting with a fresh read-back. Manual **Undo** and a max-three-frame Auto Correct workflow are available under their respective guards and consent prompts. Shutter speed, aperture, full film simulation and continuous live view control are not yet included.
 
-## Implemented
+### Install / update from iPhone
 
-- Create, select, edit, delete, export, and import film/shooting recipe references (localStorage).
-- Local photo import, photo browsing, original-file downloads, and deletion (IndexedDB). This is not a reliable primary backup; keep originals separately.
-- GPS walk tracking while the page remains active, saved walk previews, GPX export. iOS may suspend location updates in the background.
-- Night-shooting suggestions, a guided interval countdown (does **not** trigger the shutter).
-- Basic stats for local file counts, formats, storage, recipe counts and walk counts.
-- PWA installation metadata and offline app shell.
-- Separate Safari test link to camera `/v1/ping`.
+1. Connect to regular internet.
+2. Copy [Scriptable-GR-Bridge.js](./Scriptable-GR-Bridge.js) into a script in the [Scriptable iPhone app](https://scriptable.app/), replacing any older bridge. Run it once to download the complete latest interface and styles.
+3. Enable the GR IIIx camera's Wi-Fi and join its network from iPhone Settings.
+4. Run the Scriptable script. Open **Shoot → Connect camera**.
+5. Tap the shutter to **Capture & analyze**. If the response times out, choose **Recover last frame**; recovery never triggers another shutter action.
+6. Under the latest analysis, select a shooting intent, check the explicit ISO consent, and **Apply to camera**. Verify the actual ISO on the camera. **Undo** restores the previous value.
+7. Use **Advanced controls** for the SD card diagnostic, interval-related analysis, maximum ISO, activity log and guarded Auto Correct.
 
-## Not yet implemented
+The camera's Wi-Fi need not provide internet access. The bridge caches the UI locally; if GitHub is temporarily unavailable, it retains the previous complete app instead of partially updating files.
 
-- Full GR IIIx remote operation (live view, focus, shutter/aperture controls, and film simulations) is not yet implemented. The optional Scriptable bridge now has **experimental real camera ISO control**, a manual Apply/Undo flow, and a bounded Auto Correct loop. ISO writes remain untested on the physical camera. HTTPS sites ordinarily cannot fetch `http://192.168.0.1` due to mixed-content/CORS and iOS browser limitations. **A Vercel server-side proxy cannot access a camera inside your local Wi-Fi.**
-- Automated photo strips, RAW/DNG display/processing, true EXIF-based insights, cloud sync or camera photo transfer.
+**Privacy:** Pixel analysis stays on the iPhone. Original photos remain on the Ricoh SD card. The separate Library stores imported photos in the browser's local IndexedDB, which is not a permanent backup. Photo walks use local iPhone GPS but background recording can be suspended by iOS.
 
-## Privacy
+**Browser limits:** The hosted Vercel PWA is useful for offline photo imports, recipes and guidance, but secure iPhone browsers generally cannot directly send commands to the camera's local HTTP API. Remote shooting and ISO control require Scriptable. No Xcode is required for this workflow. A confirmed live Vercel deployment has not been established.
 
-All locally imported images, GPS tracks, and recipes remain in your own browser storage; there are no outgoing analytics or server-side uploads in this prototype. Uninstalling, clearing site data, or iOS storage cleanup may erase them.
-
-## Adaptive Capture (new)
-
-The **Adaptive** tab adds private on-device review of JPEG/HEIC test shots: median brightness, approximate clipped highlights and dark pixel percentages, ISO recommendations bounded by a user-defined limit, and before/after comparisons. The optional [Scriptable bridge](./Scriptable-GR-Bridge.js) can run the UI offline on iPhone and attempt Wi-Fi read-only camera requests and a deliberate test shutter, without Xcode or Vercel. **Apply suggested ISO** changes the actual camera setting through Scriptable, requires explicit consent, and confirms the new setting by read-back. **Auto Correct** unlocks only after a verified ISO change and requires M mode with fixed ISO. This new write path requires physical-camera testing.
-
-Start with [ADAPTIVE.md](./ADAPTIVE.md) for install steps, limitations and the hardware test plan. Chrome/Safari on Vercel can use the photo analyzer but cannot directly control the local HTTP camera.
+See [ADAPTIVE.md](./ADAPTIVE.md) for diagnostics, safe camera capture recovery, the firmware testing plan and known limitations.
