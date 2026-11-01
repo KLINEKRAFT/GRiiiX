@@ -134,8 +134,15 @@ function numericISO(v) {
   const n=Number(v);return Number.isInteger(n)&&n>=100&&n<=102400?n:null;
 }
 async function readISOState() {
-  const data=await cameraRequest("/v1/params/camera","GET");
+  // Some Ricoh firmwares expose only /v1/props for GET; prefer dedicated params.
+  let data;
+  try { data=await cameraRequest("/v1/params/camera","GET"); }
+  catch(e) { data=await cameraRequest("/v1/props","GET"); }
   if(!data || typeof data!=="object")throw Error("Camera settings response missing.");
+  if(data.sv===undefined || !Array.isArray(data.svList) || data.svList.length===0) {
+    const props=await cameraRequest("/v1/props","GET");
+    data={...props,...data,svList:Array.isArray(data.svList)&&data.svList.length?data.svList:props.svList};
+  }
   const list=Array.isArray(data.svList)?data.svList.map(String):[];
   const iso=data.sv===undefined?null:String(data.sv);
   if(!iso)throw Error("Camera did not provide its current ISO (sv).");
