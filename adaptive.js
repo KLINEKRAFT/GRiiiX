@@ -1,12 +1,17 @@
 /* Adaptive Capture: browser-local image review + optional Scriptable camera bridge */
 (function(){
 "use strict";
-const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false};
+const A={shots:[],scene:"people",intent:"moody",iso:1600,max:12800,maxShots:3,busy:false,stop:false,verified:false,connected:false,log:[],camera:null,settings:null,undoISO:null,originalISO:null,recoveryPending:false,detailsOpen:false,directorOn:false};
 const $=id=>document.getElementById(id);
 const safe=v=>String(v==null?"":v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const goal=()=>A.intent==="moody"?72:A.intent==="balanced"?104:128;
 const sceneNames={people:"People walking",running:"Running subjects",portrait:"Posed portraits",still:"Stationary subjects"};
+try{A.directorOn=localStorage.getItem("kkgr:director")==="cinematic"}catch(e){}
+function directing(){return A.directorOn&&window.KKDirector}
+function suggest(m,iso){return directing()?window.KKDirector.plan(m,{iso:Number(iso)||A.iso,maxISO:A.max,scene:A.scene}):guide(m)}
+function directorPreflight(x){return window.KKDirector?window.KKDirector.preflight(x):{ok:false,reason:"Photography Director module is not loaded."}}
+
 function message(text){A.log.unshift(new Date().toLocaleTimeString()+" — "+text);A.log=A.log.slice(0,24);refresh()}
 function bridge(){return window.KKNative&&typeof window.KKNative.request==="function"?window.KKNative:null}
 function refresh(){if(typeof state!=="undefined"&&state.page==="adaptive")render()}
@@ -45,7 +50,8 @@ function result(shot){let d=shot.data,g=guide(d);
 function view(){
  const shot=A.shots[A.shots.length-1];
  const active=A.connected&&!!bridge();
- const suggestion=shot?guide(shot.data):null;
+ const suggestion=shot?suggest(shot.data,A.settings?.iso||A.iso):null;
+ const director=A.directorOn;
  const canApply=active&&!!A.settings&&!!shot&&!A.busy&&suggestion&&Math.abs(suggestion.ev)>=.3;
  const sceneOptions=Object.entries(sceneNames).map(([key,name])=>'<option value="'+key+'" '+(A.scene===key?'selected':'')+'>'+safe(name)+'</option>').join('');
  const intentOptions=[["moody","Atmospheric"],["balanced","Natural"],["bright","Bright"]]
@@ -64,12 +70,13 @@ function view(){
    '<button class="shoot-connect" data-ac="connect" '+(!bridge()||A.busy?'disabled':'')+'>Connect camera</button><div class="shoot-control-copy"><b>'+(!bridge()?'Scriptable connection required':'Camera not connected')+'</b><p>Join the Ricoh Wi-Fi in iPhone Settings</p></div>')+
  '<div class="shoot-control-trailing"><label for="acPhotos" class="shoot-import">Import</label><input id="acPhotos" type="file" accept="image/*" multiple hidden></div></div>'+
  '<div class="shoot-status" role="status" aria-live="polite"><span class="shoot-status-dot"></span>'+safe(latestStatus)+'</div>'+
- '<div class="shoot-section-title">THE INTENTION</div><div class="shoot-selectors"><label>Subject<select id="acScene">'+sceneOptions+'</select></label><label>Rendering<select id="acIntent">'+intentOptions+'</select></label></div>'+
- (shot?'<div class="shoot-result"><div class="shoot-result-top"><div><span class="shoot-section-title">FRAME ASSESSMENT</span><h2>'+(suggestion.ready?'On target.':suggestion.ev>0?'Needs more light.':'Protect the highlights.')+'</h2></div><div class="shoot-ev">'+(suggestion.ev>0?'+':'')+suggestion.ev.toFixed(1)+' EV</div></div>'+
+ '<section class="director-panel '+(director?'director-active':'')+'"><div class="director-top"><div><span class="shoot-section-title">PHOTOGRAPHY DIRECTOR</span><h2>Cinematic</h2></div><button class="director-switch '+(director?'active':'')+'" data-ac="director" aria-pressed="'+(director?'true':'false')+'" '+(A.busy?'disabled':'')+'>'+(director?'Director on':'Enable')+'</button></div><p>'+(director?'Protect light. Keep the shadows. Make every correction deliberate.':'Highlight-first shooting with gentle, verified camera adjustments.')+'</p>'+(director?'<div class="director-tags"><span>HIGHLIGHTS FIRST</span><span>SHADOWS KEPT</span><span>ISO ≤ 6400</span></div>':'')+'</section>'+
+ '<div class="shoot-section-title">THE INTENTION</div><div class="shoot-selectors"><label>Subject<select id="acScene">'+sceneOptions+'</select></label>'+(director?'<div class="director-rendering"><span>RENDERING</span><strong>Cinematic / low key</strong></div>':'<label>Rendering<select id="acIntent">'+intentOptions+'</select></label>')+'</div>'+
+ (shot?'<div class="shoot-result"><div class="shoot-result-top"><div><span class="shoot-section-title">FRAME ASSESSMENT</span><h2>'+(director?safe(suggestion.label):(suggestion.ready?'On target.':suggestion.ev>0?'Needs more light.':'Protect the highlights.'))+'</h2></div><div class="shoot-ev">'+(suggestion.ev>0?'+':'')+suggestion.ev.toFixed(1)+' EV</div></div>'+
  '<p class="shoot-assessment">'+safe(suggestion.text)+'</p>'+
- '<div class="shoot-iso-trace"><div><span>CAMERA ISO</span><strong>'+safe(A.settings?.iso||A.iso)+'</strong></div><div class="shoot-iso-arrow">→</div><div><span>RECOMMENDED</span><strong>'+suggestion.iso+'</strong></div><div class="shoot-iso-note">frozen shutter</div></div>'+
+ '<div class="shoot-iso-trace"><div><span>CAMERA ISO</span><strong>'+safe(A.settings?.iso||A.iso)+'</strong></div><div class="shoot-iso-arrow">→</div><div><span>RECOMMENDED</span><strong>'+suggestion.iso+'</strong></div><div class="shoot-iso-note">'+(director?'M MODE / ISO ONLY':'ISO ONLY')+'</div></div>'+
  '<label class="shoot-consent"><input id="acApplyConsent" type="checkbox"><span>Allow this ISO change on my camera</span></label>'+
- '<div class="shoot-result-actions"><button class="shoot-primary" data-ac="apply" '+(!canApply?'disabled':'')+'>Apply to camera</button><button class="shoot-tertiary" data-ac="restore" '+(!active||!A.undoISO||A.busy?'disabled':'')+'>Undo</button></div>'+
+ '<div class="shoot-result-actions"><button class="shoot-primary" data-ac="apply" '+(!canApply?'disabled':'')+'>'+(director?'Apply Director ISO':'Apply to camera')+'</button><button class="shoot-tertiary" data-ac="restore" '+(!active||!A.undoISO||A.busy?'disabled':'')+'>Undo</button></div>'+
  '</div>':
  '<div class="shoot-first-frame"><div class="shoot-section-title">THE FIRST FRAME</div><p>Capture or import a photograph. We’ll analyze exposure and suggest the next move.</p></div>')+
  '<details class="shoot-advanced" data-grdetails '+(A.detailsOpen?'open':'')+'><summary><span>Advanced controls</span><span>Camera tools & diagnostics</span></summary><div class="shoot-advanced-body">'+
@@ -77,6 +84,7 @@ function view(){
  '<div class="shoot-advanced-grid"><label>Current ISO<input type="number" id="acIso" min="100" max="102400" value="'+A.iso+'"></label><label>Maximum ISO<input type="number" id="acMax" min="100" max="102400" value="'+A.max+'"></label></div>'+
  '<div class="shoot-section-title">AUTOMATIC CAPTURE</div><p class="shoot-small">After one confirmed ISO change in M mode, capture and review up to 3 frames automatically. The camera keeps its originals.</p><label class="shoot-consent"><input id="acConsent" type="checkbox">Authorize the automatic capture sequence</label>'+
  '<div class="shoot-tool-actions"><button data-ac="auto" '+(!active||!A.verified||A.busy||A.recoveryPending?'disabled':'')+'>Auto correct</button><button data-ac="stop" '+(!A.busy?'disabled':'')+'>Stop</button></div>'+
+ (director?'<div class="director-auto"><span class="shoot-section-title">CINEMATIC DIRECTOR PASS</span><p>Two frames maximum. Review the first; apply a confirmed ISO adjustment only when necessary.</p><label class="shoot-consent"><input id="acDirectorConsent" type="checkbox">Authorize two captures and verified ISO changes</label><button class="shoot-primary" data-ac="direct" '+(!active||!A.verified||A.busy||A.recoveryPending?'disabled':'')+'>Run Director pass</button></div>':'')+
  '<div class="shoot-section-title">SESSION TOOLS</div><div class="shoot-tool-actions"><button data-ac="clear" '+(!A.shots.length?'disabled':'')+'>Clear review</button><button data-ac="recover" '+(!active||A.busy?'disabled':'')+'>Recover shot</button><button data-ac="discard" '+(!active||!A.recoveryPending||A.busy?'disabled':'')+'>Discard pending marker</button></div>'+
  (shot?'<div class="shoot-data-grid"><div><span>MEDIAN TONE</span><b>'+shot.data.mid+'</b></div><div><span>CLIPPED WHITES</span><b>'+shot.data.clipped.toFixed(1)+'%</b></div><div><span>SHADOW DETAIL</span><b>'+shot.data.dark.toFixed(1)+'%</b></div></div>':'')+
  (A.shots.length>1?'<div class="shoot-compare">'+A.shots.slice(-2).map((p,i)=>'<div><img src="'+safe(p.url)+'" alt="'+(i?'Most recent':'Previous')+'"><small>'+(i?'CURRENT':'PREVIOUS')+'</small></div>').join('')+'</div>':'')+
@@ -117,11 +125,12 @@ async function applySuggestion(){
   const current=await readSettings();
   if(!/^\d+$/.test(current.iso))throw Error("Current camera ISO is "+current.iso+". Switch from Auto ISO to a fixed ISO on the camera for this first test.");
   if(!current.isoOptions.length)throw Error("Camera did not report a writable ISO list.");
-  const suggested=guide(A.shots[A.shots.length-1].data);
-  if(Math.abs(suggested.ev)<.3){message("No ISO change needed for the selected look.");return}
-  const proposed=Math.min(A.max,suggested.iso);
+  if(A.directorOn){const check=directorPreflight(current);if(!check.ok)throw Error(check.reason)}
+  const suggested=suggest(A.shots[A.shots.length-1].data,current.iso);
+  if(suggested.ready||Math.abs(suggested.ev)<.25){message(A.directorOn?"Director recommends holding this exposure. No camera write.":"No ISO change needed for the selected look.");return}
+  const proposed=Math.min(A.max,A.directorOn?6400:102400,suggested.iso);
   message("Sending ISO adjustment to your GR IIIx…");
-  const result=await native("setISO",{iso:proposed,expected:current.iso,maxISO:A.max});
+  const result=await native("setISO",{iso:proposed,expected:current.iso,maxISO:A.directorOn?Math.min(A.max,6400):A.max,...(A.directorOn?{policy:"cinematic",expectedShutter:current.shutter,expectedAperture:current.aperture}:{})});
   const checked=await readSettings();
   if(result.verified!==true){
    if(result.same){message("Camera was already set to "+checked.iso+". No change made.");return}
@@ -194,9 +203,10 @@ async function discardPending(){
  finally{A.busy=false;refresh()}
 }
 
-async function auto(){
+async function auto(directorPass=false){
  if(A.busy||A.recoveryPending||!A.verified||!A.connected){message("Apply one verified manual ISO change before using Auto Correct.");return}
- if(!$("acConsent")?.checked){message("Check the camera-control consent box first.");return}
+ if(directorPass&&!A.directorOn){message("Enable Cinematic Director first.");return}
+ if(!$(directorPass?"acDirectorConsent":"acConsent")?.checked){message("Check the capture authorization box first.");return}
  A.busy=true;A.stop=false;
  try{
   const initial=await readSettings();
@@ -204,10 +214,11 @@ async function auto(){
     throw Error("Auto Correct needs manual exposure mode (M). Current camera mode is "+initial.exposureMode+".");
   if(!/^\d+$/.test(initial.iso))
     throw Error("Auto Correct requires fixed ISO. Camera reports "+initial.iso+".");
+  if(directorPass){const check=directorPreflight(initial);if(!check.ok)throw Error(check.reason)}
   A.iso=Number(initial.iso);
-  let confirmed=initial.iso;
-  message("Starting Auto Correct (maximum "+A.maxShots+" captures).");
-  for(let i=0;i<A.maxShots&&!A.stop;i++){
+  let confirmed=initial.iso,budget=directorPass?2:A.maxShots;
+  message(directorPass?"Starting Cinematic Director pass (up to two frames).":"Starting Auto Correct (up to "+budget+" frames).");
+  for(let i=0;i<budget&&!A.stop;i++){
    const before=await readSettings();
    if(before.iso!==confirmed)throw Error("Camera ISO changed externally. Stopping.");
    if(!/^(m|manual)$/i.test(before.exposureMode))throw Error("Camera left M exposure mode. Stopping.");
@@ -215,11 +226,11 @@ async function auto(){
    if(r.pending){A.recoveryPending=true;throw Error(r.message||"Camera image pending; recover before another shutter request.")}
    await addCameraShot(r);A.recoveryPending=false;
    const shot=A.shots[A.shots.length-1];
-   const proposed=guide(shot.data);
+   const proposed=directorPass?window.KKDirector.plan(shot.data,{iso:Number(before.iso),maxISO:Math.min(A.max,6400),scene:A.scene}):guide(shot.data);
    message("Frame "+(i+1)+": "+proposed.text);
-   if(proposed.ready || A.stop || i+1>=A.maxShots)break;
+   if(proposed.ready || A.stop || i+1>=budget)break;
    const oldISO=before.iso;
-   const write=await native("setISO",{iso:proposed.iso,expected:oldISO,maxISO:A.max});
+   const write=await native("setISO",{iso:proposed.iso,expected:oldISO,maxISO:directorPass?Math.min(A.max,6400):A.max,...(directorPass?{policy:"cinematic",expectedShutter:before.shutter,expectedAperture:before.aperture}:{})});
    if(write.same){message("Camera ISO cannot improve further at the available setting.");break}
    if(write.verified!==true)throw Error("Camera ISO adjustment wasn't verified. Stopping.");
    const checked=await readSettings();
@@ -227,15 +238,15 @@ async function auto(){
    A.undoISO=A.undoISO||initial.iso;A.iso=Number(write.after);confirmed=write.after;
    message("Camera updated ISO "+oldISO+" → "+confirmed+".");
   }
-  message(A.stop?"Auto Correct stopped. Last ISO "+confirmed+".":"Auto Correct finished. Last ISO "+confirmed+".");
+  message(A.stop?"Capture sequence stopped. Last confirmed ISO "+confirmed+".":(directorPass?"Director pass complete. ":"Auto Correct complete. ")+"Last ISO "+confirmed+".");
  }catch(e){A.verified=false;message("Auto Correct stopped: "+e.message)}
  finally{A.busy=false;A.stop=false;refresh()}
 }
-document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="auto")await auto();if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
+document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
 document.addEventListener("change",e=>{let x=e.target;if(x.id==="acPhotos"){addFiles([...x.files]);x.value=""}
 if(x.id==="acScene"){A.scene=x.value;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
 if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.id==="acMax"){A.max=clamp(Number(x.value)||12800,100,102400);refresh()}});
-window.KKAdaptive={view,metrics,guide,connect,state:A};
+window.KKAdaptive={view,metrics,guide,connect,state:A,directorPlan:(m,iso)=>window.KKDirector?.plan(m,{iso,maxISO:Math.min(A.max,6400),scene:A.scene})};
 function iconSvg(d){return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>'}
 pages.adaptive=view;
 pages.recipes=function(){
