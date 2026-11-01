@@ -48,3 +48,7 @@ node --test tests/director.test.js
 ```
 
 **Hardware status:** The user has successfully tested remote camera photo review and some ISO control. This new Cinematic Director flow has passed mocked read/write and UI checks but has not yet been tested end-to-end against their GR IIIx firmware.
+
+## Exposure Studio (manual verified controls)
+
+Additional controls now live under **Shoot → Advanced controls → Exposure Studio** for one-step faster/slower shutter and wider/narrower aperture. They require explicit consent and device-side exposure-state and range validation. **Cinematic Director continues changing only ISO automatically**, pending real-world verification of the new shutter/aperture write path. See [EXPOSURE.md](./EXPOSURE.md).
