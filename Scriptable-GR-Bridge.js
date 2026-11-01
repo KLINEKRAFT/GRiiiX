@@ -3,7 +3,7 @@
 // Downloads the current web UI from your public GRiiiX repository on first run.
 // It then works from local cache when connected to the camera's Wi-Fi (no internet).
 // This is NOT an official Ricoh app. Only read-only operations and a deliberate test shutter
-// are supported. Experimental setting writes remain DISABLED.
+// are supported. ISO writes require explicit app consent and camera read-back.
 const SOURCE = "https://raw.githubusercontent.com/KLINEKRAFT/GRiiiX/main/";
 const FILES = ["index.html", "adaptive.js", "adaptive.css", "icon.svg", "manifest.webmanifest", "sw.js"];
 const CAMERA = "http://192.168.0.1";
@@ -26,6 +26,9 @@ async function cameraRequest(path, method) {
   r.allowInsecureRequest = true;
   r.method = method || "GET";
   r.timeoutInterval = 12;
+  if (method === "PUT") {
+    throw Error("Use putCameraISO for validated camera writes.");
+  }
   const output = await r.loadString();
   const status = r.response ? r.response.statusCode : 0;
   if (status < 200 || status >= 300) throw Error("Camera HTTP " + status + ": " + output.slice(0,180));
@@ -124,6 +127,65 @@ async function capturePreview() {
   if(!newest)throw Error("Shutter command sent, but no new photo appeared in the list. Before="+before.length+". Try 'Check card' or 'Review latest photo' to isolate the problem.");
   return await loadPreview(newest);
 }
+
+// Camera ISO bridge: one camera setting at a time, read and verify on every write.
+// Deliberately never accept arbitrary paths or unvalidated key-value pairs from WebView.
+function numericISO(v) {
+  const n=Number(v);return Number.isInteger(n)&&n>=100&&n<=102400?n:null;
+}
+async function readISOState() {
+  const data=await cameraRequest("/v1/params/camera","GET");
+  if(!data || typeof data!=="object")throw Error("Camera settings response missing.");
+  const list=Array.isArray(data.svList)?data.svList.map(String):[];
+  const iso=data.sv===undefined?null:String(data.sv);
+  if(!iso)throw Error("Camera did not provide its current ISO (sv).");
+  return {iso,isoOptions:list,exposureMode:String(data.exposureMode||"unknown"),
+    shutter:String(data.tv||""),aperture:String(data.av||""),
+    compensation:String(data.xv||"")};
+}
+async function writeCameraISO(isoToken) {
+  const r=new Request(CAMERA+"/v1/params/camera");
+  r.allowInsecureRequest=true;
+  r.method="PUT";
+  r.headers={"Content-Type":"application/x-www-form-urlencoded","Accept":"application/json"};
+  r.body="sv="+encodeURIComponent(isoToken);
+  r.timeoutInterval=15;
+  const raw=await r.loadString();
+  const code=r.response?r.response.statusCode:0;
+  if(code<200||code>=300)throw Error("Camera rejected ISO request: HTTP "+code+" "+raw.slice(0,80));
+  let data;
+  try{data=JSON.parse(raw)}catch(e){throw Error("Camera ISO response was not JSON");}
+  if(data.errCode!==undefined && ![0,200,"0","200"].includes(data.errCode))
+    throw Error("Camera ISO error "+String(data.errCode)+": "+String(data.errMsg||""));
+}
+function validateToken(target,previous) {
+  const options=previous.isoOptions;
+  if(!options.length)throw Error("Camera returned no ISO options; change blocked.");
+  if(target==="auto") {
+    if(!options.includes("auto"))throw Error("Auto ISO is not a supported setting right now.");
+    return target;
+  }
+  const desired=numericISO(target);
+  if(desired==null)throw Error("ISO must be an integer from 100 to 102400.");
+  const candidate=options.filter(v=>numericISO(v)!=null).sort((a,b)=>
+    Math.abs(Math.log2(Number(a)/desired))-Math.abs(Math.log2(Number(b)/desired)))[0];
+  if(!candidate)throw Error("Camera reported no writable manual ISO values.");
+  return candidate;
+}
+async function setVerifiedISO(payload) {
+  const current=await readISOState();
+  const requested=payload&&payload.iso;
+  const token=validateToken(requested,current);
+  if(!payload || payload.expected!==current.iso)
+    throw Error("Camera ISO has changed since last read. It is "+current.iso+". Refresh settings and try again.");
+  if(token===current.iso)return {before:current.iso,after:current.iso,verified:false,
+      same:true,exposureMode:current.exposureMode,
+      message:"Camera is already at requested ISO; no write performed."};
+  await writeCameraISO(token);
+  const after=await readISOState();
+  if(after.iso!==token)throw Error("ISO write not verified. Requested "+token+", camera reads "+after.iso+".");
+  return {before:current.iso,after:after.iso,verified:true,exposureMode:after.exposureMode};
+}
 async function handle(message) {
   switch(message.op) {
     case "ping": return await cameraRequest("/v1/ping");
@@ -131,7 +193,8 @@ async function handle(message) {
     case "listPhotos": return summarizePhotoList(await cameraRequest("/v1/photos"));
     case "latestPreview": return await latestPreview();
     case "capturePreview": return await capturePreview();
-    case "setISO": throw Error("ISO writes are not yet enabled. Verify the exact protocol and firmware first.");
+    case "getSettings": return await readISOState();
+    case "setISO": return await setVerifiedISO(message.payload);
     default: throw Error("Unsupported camera command: "+message.op);
   }
 }
