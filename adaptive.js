@@ -203,8 +203,10 @@ async function applyDirectorStep(){
   message("Rechecking the camera before the Director adjustment…");
   const live=await readSettings();
   const keys=["iso","shutter","aperture","exposureMode"];
-  if(keys.some(k=>String(photographed[k]||"")!==String(live[k]||"")))
-    throw Error("Camera settings changed since the plan was displayed. Review the new proposal.");
+  if(keys.some(k=>String(photographed[k]||"")!==String(live[k]||""))){
+    A.directorNeedsFrame=true;
+    throw Error("Camera settings changed since the test photograph. Capture a fresh frame before any Director write.");
+  }
   const oldPlan=window.KKDirector.coordinate(A.shots[A.shots.length-1].data,photographed,A.scene,{maxISO:A.max});
   const next=window.KKDirector.coordinate(A.shots[A.shots.length-1].data,live,A.scene,{maxISO:A.max});
   if(!oldPlan.ok||!next.ok||oldPlan.field!==next.field||oldPlan.to!==next.to||oldPlan.from!==next.from)
@@ -380,7 +382,7 @@ async function auto(directorPass=false){
 }
 document.addEventListener("click",async e=>{let x=e.target.closest("[data-ac]");if(!x)return;let op=x.dataset.ac;if(op==="connect")await connect();if(op==="settings")await refreshExposure();if(op==="apply")await applySuggestion();if(op==="restore")await restoreISO();if(op==="check")await checkCard();if(op==="latest")await latestPhoto();if(op==="capture")await capture();if(op==="recover")await recover();if(op==="discard")await discardPending();if(op==="directorStep")await applyDirectorStep();if(op==="exposure")await applyExposureStep(x.dataset.exfield,x.dataset.exdirection);if(op==="undoExposure")await undoExposureChange();if(op==="auto")await auto();if(op==="direct")await auto(true);if(op==="director"){A.directorOn=!A.directorOn;if(A.directorOn)A.intent="moody";try{localStorage.setItem("kkgr:director",A.directorOn?"cinematic":"off")}catch(e){}message(A.directorOn?"Cinematic Director enabled. Highlights first, shadows preserved.":"Photography Director disabled.");}if(op==="stop"){A.stop=true;message("Stop requested; waiting for in-flight operation.")}if(op==="clear"){A.directorNeedsFrame=true;A.shots.forEach(s=>URL.revokeObjectURL(s.url));A.shots=[];message("Analysis cleared; camera originals unchanged.")}});
 document.addEventListener("change",e=>{let x=e.target;if(x.id==="acPhotos"){addFiles([...x.files]);x.value=""}
-if(x.id==="acScene"){A.scene=x.value;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
+if(x.id==="acScene"){A.scene=x.value;if(A.directorOn)A.directorNeedsFrame=true;refresh()}if(x.id==="acIntent"){A.intent=x.value;refresh()}
 if(x.id==="acIso"){A.iso=clamp(Number(x.value)||1600,100,102400);refresh()}if(x.id==="acMax"){A.max=clamp(Number(x.value)||12800,100,102400);refresh()}});
 window.KKAdaptive={view,metrics,guide,connect,state:A,directorPlan:(m,iso)=>window.KKDirector?.plan(m,{iso,maxISO:Math.min(A.max,6400),scene:A.scene})};
 function iconSvg(d){return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>'}
