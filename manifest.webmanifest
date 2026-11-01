@@ -1,11 +1,11 @@
 {
   "name": "Klinekraft GR",
   "short_name": "Klinekraft GR",
-  "description": "A local-first Ricoh GR IIIx photography companion",
+  "description": "Your private photography companion for the Ricoh GR IIIx",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f7f8fa",
-  "theme_color": "#f7f8fa",
+  "background_color": "#f6f5f2",
+  "theme_color": "#f6f5f2",
   "icons": [
     {
       "src": "/icon.svg",
